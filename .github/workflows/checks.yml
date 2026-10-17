@@ -30,6 +30,12 @@ jobs:
           cc -O2 -std=c11 -Wall -Wextra -Werror -I../../common \
             -o audio_host audio_host.c ../../common/audio.c ../../common/sounds.c
           ./audio_host
+      - name: Test the power logic
+        working-directory: firmware/host_test
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -I../main -I../../common \
+            -o pwr_host pwr_host.c ../main/pwr_logic.c
+          ./pwr_host
       - name: Compare batched and sequential inference
         if: hashFiles('model/out/model_q4.bin') != ''
         working-directory: firmware/host_test

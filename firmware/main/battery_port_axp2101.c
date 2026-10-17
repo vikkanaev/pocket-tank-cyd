@@ -148,6 +148,8 @@ int battery_port_key_poll(void) {
     wr(0x49, (uint8_t)(st & 0x0C));                                     /* clear what was taken */
     return (st & 0x04) ? 2 : 1;
 }
+/* (this fork, 2026-10-17) battery_port.h: the PMIC times the press itself, so dropping its flags is the whole swallow */
+void battery_port_key_swallow(void) { while (battery_port_key_poll()) { } }
 
 /* bench (director `keytime N`, 2026-09-16): how long are the keeper's presses?
  * Polls REG 49 every ~2 ms for N s and logs each press from the PWRON falling

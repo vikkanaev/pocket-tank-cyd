@@ -28,6 +28,7 @@ firmware/build_wst169/
 # browser installer output (tools/make_installer.py) - upload this folder
 installer/dist/
 firmware/host_test/audio_host
+firmware/host_test/pwr_host
 
 # the OTA signing key (tools/ota_key.sh) - never committed
 firmware/keys/

@@ -1,5 +1,12 @@
-set(SRCS main.c director.c brightness.c orientation.c sleep_setting.c batlog.c codec_port.c advisor_llm_esp.c battery_port_axp2101.c imu_port.c
+set(SRCS main.c director.c brightness.c orientation.c sleep_setting.c batlog.c codec_port.c advisor_llm_esp.c imu_port.c
          update_mode.c net_port_esp.c model_trailer.c board_power.c)
+# (this fork, 2026-10-17) the WST169 has no PMIC: its battery is a VBAT divider
+# on the ADC and its PWR key a GPIO, timed by the host-tested pwr_logic.c
+if(CONFIG_POCKET_TANK_WST169)
+    list(APPEND SRCS battery_port_adc.c pwr_logic.c)
+else()
+    list(APPEND SRCS battery_port_axp2101.c)
+endif()
 if(CONFIG_POCKET_TANK_DISPLAY_SH8601)
     list(APPEND SRCS display_port_sh8601.c)
 elseif(CONFIG_POCKET_TANK_DISPLAY_ILI9341 OR CONFIG_POCKET_TANK_DISPLAY_ST7789)
@@ -26,7 +33,7 @@ endif()
 idf_component_register(
     SRCS ${SRCS}
     INCLUDE_DIRS "."
-    REQUIRES tankcore llm esp_partition spi_flash esp_timer esp_driver_spi esp_driver_i2c esp_driver_i2s esp_driver_gpio esp_driver_usb_serial_jtag esp_lcd nvs_flash esp_app_format
+    REQUIRES tankcore llm esp_partition spi_flash esp_timer esp_driver_spi esp_driver_i2c esp_driver_i2s esp_driver_gpio esp_driver_usb_serial_jtag esp_adc esp_lcd nvs_flash esp_app_format
              esp_wifi esp_netif esp_event esp_http_client esp_https_ota app_update json mbedtls bootloader_support
     EMBED_FILES "tokenizer.bin" "../../assets/sounds/sounds.bin"
 )
