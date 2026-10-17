@@ -23,11 +23,6 @@ KEY=firmware/keys/ota_signing_key.pem
 if [ -n "${IDF_PATH:-}" ]; then IDF=$IDF_PATH
 elif [ -f ~/esp/esp-idf/export.sh ]; then IDF=~/esp/esp-idf
 else IDF=~/esp/v5.5.2/esp-idf; fi
-# (this fork, 2026-10-17) export.sh names the Python env after the first
-# python3 on PATH (3.13 on Viktor's Mac), but the one installed is py3.9's:
-# point it there when nothing else says which, and that env exists.
-PYENV_DIR=$HOME/.espressif/python_env/idf5.5_py3.9_env
-if [ -z "${IDF_PYTHON_ENV_PATH:-}" ] && [ -d "$PYENV_DIR" ]; then export IDF_PYTHON_ENV_PATH=$PYENV_DIR; fi
 # export.sh is not written for set -eu (v5.5.2 stops in it, silently): source
 # it with both off.
 set +eu

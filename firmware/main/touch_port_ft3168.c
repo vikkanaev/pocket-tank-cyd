@@ -242,7 +242,7 @@ static bool panel_read(uint16_t *x, uint16_t *y) {
     if (s_ft) return ft3168_read(x, y);
     if (!s_tp) return false;
     uint16_t st[1]; uint8_t n = 0;
-#if CONFIG_POCKET_TANK_WST_320X240 || CONFIG_POCKET_TANK_WST169
+#if CONFIG_POCKET_TANK_WST169
     /* (this fork, 2026-10-17) The Touch-LCD-1.69's first boot: its CST816T
        stopped answering half a second after the driver's reset, and every
        frame's read failed - ~1100 "I2C read failed" / "i2c transaction
@@ -254,7 +254,8 @@ static bool panel_read(uint16_t *x, uint16_t *y) {
        the 20 ms is only the bus lock wait / a stuck SCL), a dozing chip is
        no finger - as the failed read was - and a touch wakes it, so the
        next frame reads it. An answering chip costs the same 0.1 ms and
-       reads as before, so the Touch-LCD-2's CST816D takes it too. */
+       reads as before. Only the 1.69: the Touch-LCD-2's poll is left as it
+       was (its dark-path probe, touch_port_finger_now, is older). */
     if (i2c_master_probe(board_i2c_bus(), I2C_ADDR_CST816D, 20) != ESP_OK) return false;
 #endif
     esp_lcd_touch_read_data(s_tp);
@@ -329,7 +330,8 @@ static bool cst816d_init(void) {
         uint8_t off = 0x01, back = 0;
         esp_err_t w = esp_lcd_panel_io_tx_param(io, 0xFE, &off, 1);
         esp_err_t r = w == ESP_OK ? esp_lcd_panel_io_rx_param(io, 0xFE, &back, 1) : w;
-        if (r == ESP_OK) ESP_LOGI(TAG, "CST816T auto-sleep off (0xFE reads 0x%02X)", back);
+        if (r == ESP_OK && back != 0) ESP_LOGI(TAG, "CST816T auto-sleep off (0xFE reads 0x%02X)", back);
+        else if (r == ESP_OK) ESP_LOGW(TAG, "CST816T ignored the 0xFE write (reads 0x00): the poll's probe covers a dozing chip");
         else ESP_LOGW(TAG, "CST816T auto-sleep write failed (%s): the poll probes past a dozing chip", esp_err_to_name(r));
     }
 #endif

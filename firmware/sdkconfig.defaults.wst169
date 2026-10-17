@@ -3,8 +3,8 @@
 # and 8 MB octal PSRAM - with a 1.69" ST7789V2 IPS (240 x 280 with rounded
 # corners, scanned landscape 280 x 240), a CST816T touch panel with its own
 # reset line, a QMI8658 IMU, a PCF85063 RTC and a passive buzzer. No codec,
-# no PMIC: the audio port is the stub, the battery meter stays hidden (no
-# AXP2101 answers) and the clock is the system time. Phase 1 runs over USB
+# no PMIC: the audio port is the stub and the battery meter stays hidden (no
+# AXP2101 answers); the RTC is read at boot as on every board. Phase 1 runs over USB
 # and leaves the power latch (SYS_EN), the PWR key and the buzzer alone
 # (board_pins.h says why).
 #

@@ -154,9 +154,9 @@
 #define PIN_LCD_MISO      -1       /* write-only panel, no TF card */
 #define PIN_LCD_RST       8        /* low = reset: esp_lcd_panel_reset pulses it */
 #define PIN_LCD_BL        15       /* high = backlight on; PWM for brightness */
-/* Starting values for the bench (Task 5): the Touch-LCD-2's landscape
- * (MX | MV, RGB order, IPS inversion on), clocked at 40 MHz until the
- * picture is right. */
+/* Verified on the glass (docs/board-touch-lcd-1.69.md): the Touch-LCD-2's
+ * landscape (MX | MV, RGB order, IPS inversion on), gap 20,0, clocked at
+ * 40 MHz (80 MHz not tried). */
 #define LCD_PCLK_HZ       (40 * 1000 * 1000)
 #define LCD_SWAP_XY       true
 #define LCD_MIRROR_X      true

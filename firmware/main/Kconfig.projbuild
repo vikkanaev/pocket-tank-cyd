@@ -28,8 +28,9 @@ menu "pocket-tank"
             tank (320x240, or 280x240 there) and the pages laid out for it,
             touch already landscape from the driver with no finger
             bias, the settings page's compact rows, no update channel (OTA
-            hidden), the CYD's old saves read back, the algae paced for its
-            300 cells, and the sleep modes that go dark (screen, lightsleep)
+            hidden), the CYD's old saves read back (CYD and Touch-LCD-2 only;
+            the 1.69 has none), the algae paced per cell (tuned for the CYD's
+            300 cells, not the 1.69's), and the sleep modes that go dark (screen, lightsleep)
             with the settings page's SLEEP row. Not chosen by hand: the board
             entries above select it, and tankcore's CMakeLists hands it to
             common/.

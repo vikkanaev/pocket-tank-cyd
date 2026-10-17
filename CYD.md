@@ -908,10 +908,12 @@ GPIO 33, 35, 36, 40, 41 and 42 - the power latch (SYS_EN), the PWR key and
 the buzzer on one revision of the board or the other, and which revision
 this one is is not settled - so on battery it cannot hold its own power,
 the PWR key does nothing, there is no sound and no battery pill. The RTC
-is not read (the clock is the system time), the IMU does not turn the
-picture (`IMU_AUTO_FLIP=n`; the SCREEN row does), OTA is off as on every
-320 x 240 board, and the panel's mirrors, colours, 40 MHz clock, gap and the
-touch mapping are starting values for the bench.
+(PCF85063, 0x51) is read at boot as on every board ("rtc: system clock set
+from RTC"), the IMU does not turn the picture (`IMU_AUTO_FLIP=n`; the SCREEN
+row does), and OTA is off as on every 320 x 240 board. The panel and touch
+values are verified on the glass (docs/board-touch-lcd-1.69.md): gap 20,0,
+colours (INVERT true, BGR false), the orientation as it is (USB on top is
+upright), the 40 MHz clock (80 MHz not tried) and the touch mapping 1/1/0.
 
 ## Syncing with upstream
 
