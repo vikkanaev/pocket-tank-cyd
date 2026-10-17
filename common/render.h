@@ -750,8 +750,95 @@ void render_fish_portrait(uint16_t *fb, int stride, float x, float y, float size
 #define SET_ARW_W     UI(40)
 #undef  SET_ROT_WORD_X
 #define SET_ROT_WORD_X (SET_SEG_X + SET_SEG_W + UI(14))
+#ifdef CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) the Touch-LCD-1.69: the same three pages on a glass
+   40 px narrower, its corners rounded (r ~20 px). The rows and their heights
+   stay the CYD's; the columns come in (glass x, as above):
+   - milestones: the portrait, the name and the strips 18 px further left, the
+     six badges of a fish row at a 28 px pitch (a 24 px badge, 4 px apart) from
+     x 96, so the first row's last one ends at 260, clear of the top corner.
+     The tank row shows five badges a page (the pager the others have for a
+     long list) and its arrow after the fifth, at 237..253. The foot's three
+     buttons share x 20..260 (74 px each, 9 apart): the corners take the rest.
+   - the shop: its header arrows end at 260, HOW TO EARN keeps its 96 px from
+     x 20, CLOSE is the milestones' (186..260); the rows' UNLOCK already ends
+     8 px from the glass (TANK_W - 8 - SHP_BTN_W).
+   - settings: the labels from x 10, the segments the CYD's 62 px at its 66 px
+     pitch from x 78 (to 272), CLOSE the milestones'. */
+#undef  MSP_FISH_X
+#define MSP_FISH_X    CYD_GLASS_X(24)   /* an elder's tail at x 5, clear of the corner's curve on row 0 */
+#undef  MSP_NAME_X
+#define MSP_NAME_X    CYD_GLASS_X(42)   /* the tank row's population strip then ends at 93, where the badges' taps start */
+#undef  MSP_BADGE_X0
+#define MSP_BADGE_X0  CYD_GLASS_X(96)
+#undef  MSP_BADGE_DX
+#define MSP_BADGE_DX  28
+#undef  MSP_PER_ROW
+#define MSP_PER_ROW   5
+#undef  MSP_TPG_X
+#define MSP_TPG_X     (MSP_BADGE_X0 - UI(4) + MSP_PER_ROW * MSP_BADGE_DX)   /* glass x 233: the arrow 237..253, its taps from where a sixth cell would begin */
+#undef  MSP_SET_X
+#define MSP_SET_X     CYD_GLASS_X(20)
+#undef  MSP_SET_W
+#define MSP_SET_W     74
+#undef  MSP_UPG_X
+#define MSP_UPG_X     CYD_GLASS_X(103)
+#undef  MSP_UPG_W
+#define MSP_UPG_W     74
+#undef  MSP_CLOSE_X
+#define MSP_CLOSE_X   CYD_GLASS_X(186)  /* (the shop's and settings' CLOSE too) */
+#undef  MSP_CLOSE_W
+#define MSP_CLOSE_W   74
+#undef  SHP_EARN_X
+#define SHP_EARN_X    CYD_GLASS_X(20)
+#undef  SHP_ARROW_X1
+#define SHP_ARROW_X1  (CYD_GLASS_X(TANK_W - 20) - SHP_ARROW_W)   /* next: glass x 230..260; previous 195..225 */
+#undef  SET_LABEL_X
+#define SET_LABEL_X   CYD_GLASS_X(10)
+#undef  SET_SEG_X
+#define SET_SEG_X     CYD_GLASS_X(78)
+#endif
 _Static_assert(MSP_CLOSE_Y + MSP_CLOSE_H <= TANK_H && SET_SEG_Y(SET_ROW6_Y) + SET_SEG_H < MSP_CLOSE_Y,
                "the 320x240 pages must fit on the glass");
+#ifdef CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) the 1.69's three pages on its glass: every button
+   and badge ends 6 px short of the right glass edge, and in the top and
+   bottom 20 rows - where the panel's corners round off (r ~20 px, still a
+   guess) - every box a finger aims at keeps 20 px from both side edges.
+   Glass x = page x + PAGE_X. */
+#define WST169_GX(x)    ((x) + PAGE_X)
+#define WST169_RIGHT    (TANK_W - 6)       /* where a box may end, mid-glass */
+#define WST169_CORNER   20                 /* the rows the corners take, and the side margin there */
+#define WST169_IN_CORNER(y0, h) ((y0) < WST169_CORNER || (y0) + (h) > TANK_H - WST169_CORNER)
+#define WST169_CLEAR(x0, w, y0, h) \
+    (WST169_IN_CORNER(y0, h) ? WST169_GX(x0) >= WST169_CORNER && WST169_GX((x0) + (w)) <= TANK_W - WST169_CORNER \
+                             : WST169_GX(x0) >= 0 && WST169_GX((x0) + (w)) <= WST169_RIGHT)
+/* settings: the three segments (BRIGHTNESS, VOLUME, SLEEP) and LIGHTS OUT's span */
+_Static_assert(WST169_GX(SET_SEG_X + 2 * SET_SEG_DX + SET_SEG_W) <= WST169_RIGHT, "1.69: the settings segments run off the glass");
+_Static_assert(WST169_CLEAR(SET_SEG_X, SET_SPAN_W, SET_SEG_Y(SET_ROW1_Y), SET_SEG_H), "1.69: BRIGHTNESS in the corners");
+/* the milestones page: a fish row's six badges (row 0 starts in the top corners) */
+_Static_assert(WST169_CLEAR(MSP_BADGE_X0, 5 * MSP_BADGE_DX + MSP_ICON, MSP_ROW_Y0 + MSP_ROW_BADGE, MSP_ICON),
+               "1.69: the first fish row's badges run into the corner");
+/* ... the tank row's last badge, and its page arrow beside it (the arrow and its "new" ring: x + 4 - 4 .. x + 4 + 16 + 4) */
+_Static_assert(WST169_GX(MSP_BADGE_X0 + (MSP_PER_ROW - 1) * MSP_BADGE_DX + MSP_ICON) <= WST169_RIGHT, "1.69: the tank row's last badge is off the glass");
+_Static_assert(WST169_GX(MSP_TPG_X + 4 + 16 + 4) <= WST169_RIGHT, "1.69: the tank row's page arrow is off the glass");
+_Static_assert(MSP_TPG_X >= MSP_BADGE_X0 + (MSP_PER_ROW - 1) * MSP_BADGE_DX + MSP_ICON &&
+               MSP_TPG_X <= MSP_BADGE_X0 - UI(4) + MSP_PER_ROW * MSP_BADGE_DX,
+               "1.69: the page arrow's hit must start past the last badge, before a next-page cell");
+/* ... the foot: SETTINGS | UPGRADES | CLOSE, in the bottom corners' rows */
+_Static_assert(WST169_CLEAR(MSP_SET_X, MSP_SET_W, MSP_SET_Y, MSP_CLOSE_H), "1.69: SETTINGS in the corner");
+_Static_assert(WST169_CLEAR(MSP_UPG_X, MSP_UPG_W, MSP_CLOSE_Y, MSP_CLOSE_H), "1.69: UPGRADES off the glass");
+_Static_assert(WST169_CLEAR(MSP_CLOSE_X, MSP_CLOSE_W, MSP_CLOSE_Y, MSP_CLOSE_H), "1.69: the milestones' CLOSE in the corner");
+_Static_assert(MSP_SET_X + MSP_SET_W < MSP_UPG_X && MSP_UPG_X + MSP_UPG_W < MSP_CLOSE_X, "1.69: the foot's buttons overlap");
+/* the shop: the header's page arrows (top corner rows), the rows' buttons, the foot */
+_Static_assert(WST169_CLEAR(SHP_ARROW_X0, SHP_ARROW_X1 + SHP_ARROW_W - SHP_ARROW_X0, SHP_ARROW_Y, SHP_ARROW_H), "1.69: the shop's arrows in the corner");
+_Static_assert(WST169_CLEAR(SHP_BTN_X, SHP_BTN_W, SHP_ROW_Y0 + (SHP_PER_PAGE - 1) * SHP_ROW_DY + SHP_BTN_DY, SHP_BTN_H), "1.69: the shop's UNLOCK off the glass");
+_Static_assert(WST169_CLEAR(SHP_EARN_X, SHP_EARN_W, MSP_CLOSE_Y, MSP_CLOSE_H), "1.69: HOW TO EARN in the corner");
+_Static_assert(WST169_CLEAR(SHP_CLOSE_X, MSP_CLOSE_W, MSP_CLOSE_Y, MSP_CLOSE_H), "1.69: the shop's CLOSE in the corner");
+_Static_assert(SHP_EARN_X + SHP_EARN_W < SHP_CLOSE_X, "1.69: HOW TO EARN runs into CLOSE");
+/* settings' CLOSE */
+_Static_assert(WST169_CLEAR(SET_CLOSE_X, MSP_CLOSE_W, SET_FOOT_Y, MSP_CLOSE_H), "1.69: the settings' CLOSE in the corner");
+#endif
 #endif
 
 #endif

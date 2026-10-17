@@ -537,6 +537,13 @@ static void veg_bed_base(const tank_t *t, int b, float *bx0, int *n) {
                                                               left bed 1 a frond short of the wall) */
     else if (b == 1) { *bx0 = TANK_FX1 - 72; base_n = 4; }
     else if (b == 2) { *bx0 = TANK_FX1 - 170; base_n = 2; }
+#elif defined(CONFIG_POCKET_TANK_WST169)                  /* (this fork, 2026-10-17) the 1.69's floor is 280 px: 0.62 of it put bed 2's
+                                                              eight fronds (174..258) in among bed 1's three (235..259). Bed 1 stays (its
+                                                              last frond 21 px from the wall); bed 2 five fronds (163..211) left of it, the
+                                                              two beds' spans meeting at x 229, not crossing; the reef bed
+                                                              two fronds fewer (as the bowl's) so its widest reach, lush, ends at 156 */
+    else if (b == 1) { *bx0 = TANK_W * 0.84f; base_n = 4; }
+    else if (b == 2) { *bx0 = TANK_W * 0.84f - 72; base_n = -1; }
 #else
     else if (b == 1) { *bx0 = TANK_W * 0.84f; base_n = 4; }
     else if (b == 2) { *bx0 = TANK_W * 0.62f; base_n = 2; }
@@ -554,6 +561,8 @@ static void veg_bed_base(const tank_t *t, int b, float *bx0, int *n) {
     if (b == 0) nn -= 2;
 #elif defined(TANK_WATCH)
     if (b == 0) nn -= 4;
+#elif defined(CONFIG_POCKET_TANK_WST169)                  /* (this fork, 2026-10-17) the 1.69: clear of bed 2 (above) */
+    if (b == 0) nn -= 2;
 #endif
     if (nn > VEG_FRONDS_MAX) nn = VEG_FRONDS_MAX;
     while (nn > 1 && *bx0 + nn * 12 > TANK_FX1 - 8) nn--;   /* beds stop at the glass */

@@ -1697,19 +1697,9 @@ static int selftest_tend(void) {
 #else
         const float scrub_y0 = 150;
 #endif
-#ifdef CONFIG_POCKET_TANK_WST169
-        /* (this fork, 2026-10-17) the 1.69's glass is 280 wide: bed 2 (x 174..270) stands under the stroke's start, 16 px
-           from bed 1's last frond, and a stroke that begins beside ITS tall fronds is armed (rightly). Bed 2 short for
-           this test, like bed 1's: the stroke then starts beside no frond tip, as on the wider boards */
-        float g_bed2 = tank.veg_growth[2];
-        tank_veg_set(&tank, 2, 0.3f);
-#endif
         for (float y = scrub_y0; y <= TANK_BOT - 10; y += 6)
             tank_touch_drag(&tank, fx2 + ((int)(y / 6) & 1 ? 14 : -14), y);
         tank_tick(&tank, 1.0f / 60.0f, advisor_rules); tank_tick(&tank, 1.0f / 60.0f, advisor_rules);
-#ifdef CONFIG_POCKET_TANK_WST169
-        tank_veg_set(&tank, 2, g_bed2);
-#endif
         int n; tank_veg_bed(&tank, 1, NULL, NULL, NULL, &n);
         for (int i = 0; i < n; i++)
             if (tank.veg_h[1][i] < before[i] - 0.001f) { printf("FAIL: scrub from mid-glass cut frond %d (%.2f -> %.2f)\n", i, before[i], tank.veg_h[1][i]); return 1; }
@@ -3765,15 +3755,26 @@ static int selftest_shop(void) {
             if (tank.tank_ms_bits & TMS_FULL_SCHOOL) { printf("FAIL: the full-school badge with %d shrimp\n", tank.shrimp_n); return 1; }
             uint32_t unl = tank.sd_unlocks; tank.sd_unlocks &= ~SD_ITEM_SHRIMP;      /* no shrimp: one page, no arrow */
             render_milestones_leave(); MS_HASH(h0);
+#ifdef CONFIG_POCKET_TANK_WST169
+            /* (this fork, 2026-10-17) the 1.69's tank row shows five badges a page (render.h): the six always shown
+               take two pages already, so without shrimp page 2 is the sixth alone - and with them the full school's
+               badge is page 2's SECOND cell. The same checks, a cell over */
+            const float CELL_SCHOOL = CELL1, CELL_EMPTY = MS_BADGE_X(2); const int LAST_P1 = MSP_PER_ROW - 1;
+            if (ms_tap(ARROW_X, TY) != MS_TAP_KEPT || ms_tap(CELL_SCHOOL, TY) != MS_TAP_NONE || ms_tap(CELL0, TY) != MS_TAP_KEPT) {
+                printf("FAIL: without shrimp the tank row's page 2 is not the sixth badge alone\n"); return 1; }
+            render_milestones_leave();
+#else
+            const float CELL_SCHOOL = CELL0, CELL_EMPTY = CELL1; const int LAST_P1 = 5;
             if (ms_tap(ARROW_X, TY) != MS_TAP_NONE || render_milestones_swipe(&tank, SWIPE_X, SWIPE_Y, -60)) { printf("FAIL: the tank row pages without shrimp\n"); return 1; }
+#endif
             MS_HASH(hx); if (hx != h0) { printf("FAIL: a tap past the badges changed the page without shrimp\n"); return 1; }
             tank.sd_unlocks = unl;
             MS_HASH(h0);
             if (ms_tap(ARROW_X, TY) != MS_TAP_KEPT) { printf("FAIL: the tank row's arrow did not turn the page\n"); return 1; }
             MS_HASH(h1);
             if (h1 == h0) { printf("FAIL: page 2 of the tank row looks like page 1\n"); return 1; }
-            if (ms_tap(CELL1, TY) != MS_TAP_NONE) { printf("FAIL: an empty cell on page 2 opened a modal\n"); return 1; }
-            if (ms_tap(CELL0, TY) != MS_TAP_KEPT) { printf("FAIL: the full-school badge did not open its modal\n"); return 1; }
+            if (ms_tap(CELL_EMPTY, TY) != MS_TAP_NONE) { printf("FAIL: an empty cell on page 2 opened a modal\n"); return 1; }
+            if (ms_tap(CELL_SCHOOL, TY) != MS_TAP_KEPT) { printf("FAIL: the full-school badge did not open its modal\n"); return 1; }
             ms_tap(MS_OFF_X, MS_OFF_Y);                              /* close it: page 2 stays */
             MS_HASH(hx); if (hx != h1) { printf("FAIL: closing the modal dropped the tank row's page\n"); return 1; }
             if (ms_tap(ARROW_X, TY) != MS_TAP_KEPT) { printf("FAIL: the arrow did not come back\n"); return 1; }
@@ -3786,7 +3787,7 @@ static int selftest_shop(void) {
             render_milestones_swipe(&tank, SWIPE_X, SWIPE_Y, 60);
             MS_HASH(hx); if (hx != h0) { printf("FAIL: a right swipe did not come back to page 1\n"); return 1; }
             /* the modal's arrows cross the pages: the sixth badge, one right = the seventh, and the row follows */
-            if (ms_tap(MS_BADGE_X(5), TY) != MS_TAP_KEPT) { printf("FAIL: the sixth tank badge did not open\n"); return 1; }
+            if (ms_tap(MS_BADGE_X(LAST_P1), TY) != MS_TAP_KEPT) { printf("FAIL: page 1's last tank badge did not open\n"); return 1; }
             ms_tap(MS_ARROW_R_X, MS_ARROW_Y);
             ms_tap(MS_OFF_X, MS_OFF_Y);
             MS_HASH(hx); if (hx != h1) { printf("FAIL: the modal's arrow to the seventh badge left the row on page 1\n"); return 1; }
@@ -3813,7 +3814,16 @@ static int selftest_shop(void) {
             fish_t *f = &tank.fish[0]; float rx, ry;
             tank.sd_unlocks &= ~(SD_ITEM_CLUSTER | SD_ITEM_SHRIMP); tank.tank_ms_bits &= ~(TMS_FIRST_REEF | TMS_FULL_SCHOOL);
             render_milestones_leave();
+#ifdef CONFIG_POCKET_TANK_WST169
+            /* (this fork, 2026-10-17) five badges a page on the 1.69: page 2 is the sixth alone, the reef's cell (the
+               second) empty */
+            const float REEF_CELL = MS_BADGE_X(1);
+            if (ms_tap(MSP_TPG_X + 14, MS_TANK_Y) != MS_TAP_KEPT || ms_tap(REEF_CELL, MS_TANK_Y) != MS_TAP_NONE) { printf("FAIL: the tank row has a reef badge with no cluster and no shrimp\n"); return 1; }
+            render_milestones_leave();
+#else
+            const float REEF_CELL = MS_BADGE_X(0);
             if (ms_tap(MSP_TPG_X + 14, MS_TANK_Y) != MS_TAP_NONE) { printf("FAIL: the tank row pages with no cluster and no shrimp\n"); return 1; }
+#endif
             tank_reef_spot(&tank, &rx, &ry);
             if (rx != tank.reef_x || ry != tank.reef_y) { printf("FAIL: no cluster, and the reef spot is not the grass corner's (%.0f,%.0f)\n", rx, ry); return 1; }
             f->ms_bits &= ~(MS_INSPECTED | MS_FIRST_GRASS); f->stress = 0;
@@ -3828,7 +3838,7 @@ static int selftest_shop(void) {
             progression_tick(&tank, 1.0f / 60.0f);
             if (tank.tank_ms_bits & TMS_FIRST_REEF) { printf("FAIL: a fish at the old grass corner earned the reef badge\n"); return 1; }
             if (ms_tap(MSP_TPG_X + 14, MS_TANK_Y) != MS_TAP_KEPT) { printf("FAIL: with the cluster bought the tank row has no second page\n"); return 1; }
-            if (ms_tap(MS_BADGE_X(0), MS_TANK_Y) != MS_TAP_KEPT) { printf("FAIL: the reef badge did not open its modal\n"); return 1; }
+            if (ms_tap(REEF_CELL, MS_TANK_Y) != MS_TAP_KEPT) { printf("FAIL: the reef badge did not open its modal\n"); return 1; }
             render_milestones_leave();
             /* a fish that chooses inspect_reef swims to the cluster on its own and earns it */
             bool earned = false; float best = 1e9f; int took = 0;
@@ -3841,6 +3851,9 @@ static int selftest_shop(void) {
             if (!earned) { printf("FAIL: 90 s of inspect_reef did not bring a fish to the cluster (closest %.0f px)\n", best); return 1; }
             tank.sd_unlocks &= ~SD_ITEM_CLUSTER;                              /* sold: an earned badge stays on the row */
             if (ms_tap(MSP_TPG_X + 14, MS_TANK_Y) != MS_TAP_KEPT) { printf("FAIL: the earned reef badge left the row with the cluster\n"); return 1; }
+#ifdef CONFIG_POCKET_TANK_WST169
+            if (ms_tap(REEF_CELL, MS_TANK_Y) != MS_TAP_KEPT) { printf("FAIL: the earned reef badge left the row with the cluster\n"); return 1; }   /* (this fork: page 2 is there anyway) */
+#endif
             render_milestones_leave();
             /* the seagrass: a rest inside the left bed's canopy earns it; cut to nubs there is no cover to rest in */
             tank_veg_set(&tank, 0, VEG_NUB);
