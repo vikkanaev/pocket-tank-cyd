@@ -684,8 +684,10 @@ static bool load_save(tank_t *t, int64_t *saved_unix) {
     size_t got = 0;
     bool loaded = persist_port_load(&sv, sizeof sv, &got) && got >= SAVE_CORE_SIZE && got <= sizeof sv;
     if (!loaded || sv.magic != SAVE_MAGIC || sv.n_fish < 2 || sv.n_fish > N_FISH_MAX) return false;
-#ifdef CONFIG_POCKET_TANK_320X240
-    /* (this fork) a save the CYD wrote before v0.3.3: it kept only this
+#if defined(CONFIG_POCKET_TANK_320X240) && !defined(CONFIG_POCKET_TANK_WST169)
+    /* (this fork, 2026-10-17) not compiled for the Touch-LCD-1.69: a new board has
+     * no pre-0.3.3 saves to read back.
+     * (this fork) a save the CYD wrote before v0.3.3: it kept only this
      * board's own algae cells (20 x 15 = 300, at 460..760), not the 644 every
      * board keeps now, so everything after the grid sat 344 bytes early. Those
      * saves are 1312, 1320 or 1328 bytes (the CYD began at the reef cluster's

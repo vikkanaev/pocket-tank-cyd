@@ -5,8 +5,8 @@ menu "pocket-tank"
         help
             Which board the firmware is built for. Selects the pins, the tank
             size (common/tank.h) and which display / touch ports can be used.
-            (this fork) Each 320x240 board selects POCKET_TANK_320X240, the
-            part they share; its own entry carries what is its alone.
+            (this fork) Each small-board entry (the 320x240 family) selects
+            POCKET_TANK_320X240, the part they share; its own entry carries what is its alone.
         config POCKET_TANK_BOARD_AMOLED18
             bool "Waveshare ESP32-S3-Touch-AMOLED-1.8 (448x368)"
         config POCKET_TANK_CYD_320X240
@@ -15,13 +15,18 @@ menu "pocket-tank"
         config POCKET_TANK_WST_320X240
             bool "Waveshare ESP32-S3-Touch-LCD-2 at 320x240: ST7789T3 + CST816D"
             select POCKET_TANK_320X240
+        config POCKET_TANK_WST169
+            bool "Waveshare ESP32-S3-Touch-LCD-1.69 at 280x240: ST7789V2 + CST816T"
+            select POCKET_TANK_320X240
     endchoice
     config POCKET_TANK_320X240
         bool
         help
-            The 320x240 layout every 320x240 board shares (this fork,
-            2026-10-08): common/tank.h's 320x240 tank and the pages laid out
-            for it, touch already landscape from the driver with no finger
+            The small-board layout every board of the 320x240 family shares
+            (this fork, 2026-10-08; the Touch-LCD-1.69 joined it 2026-10-17
+            at 280 wide, POCKET_TANK_WST169): common/tank.h's landscape
+            tank (320x240, or 280x240 there) and the pages laid out for it,
+            touch already landscape from the driver with no finger
             bias, the settings page's compact rows, no update channel (OTA
             hidden), the CYD's old saves read back, the algae paced for its
             300 cells, and the sleep modes that go dark (screen, lightsleep)

@@ -34,8 +34,18 @@
  * the 2.8" CYD (ES3C28P) and the Waveshare ESP32-S3-Touch-LCD-2. Their Kconfig
  * board choices each select it, tankcore's CMakeLists hands it to every
  * component, and the sim's make 320X240=1 defines it. A plain rectangle (CYD.md) */
+#ifdef CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) the Waveshare ESP32-S3-Touch-LCD-1.69: 280 x 240, the
+ * 320 x 240 family 40 px narrower. It always comes with POCKET_TANK_320X240 (the
+ * Kconfig entry selects it), so only what depends on the width branches here */
+#define TANK_W 280
+#else
 #define TANK_W 320
+#endif
 #define TANK_H 240
+#ifdef CONFIG_POCKET_TANK_WST169
+_Static_assert(TANK_W == 280 && TANK_H == 240, "the Touch-LCD-1.69's glass is 280 x 240");
+#endif
 /* (this fork) Upstream's ROUND, WATCH and SQUARE builds are their own Kconfig
  * switches, outside the board choice, so menuconfig lets one be ticked on a
  * 320 x 240 board too. Each also defines TANK_W and TANK_H: the preprocessor
@@ -186,6 +196,11 @@ typedef enum { VEG_KIND_GRASS, VEG_KIND_SWORD } veg_kind_t;
 #define ALGAE_CELL 20
 #define ALGAE_COLS 24
 #define ALGAE_ROWS 24
+#elif defined(CONFIG_POCKET_TANK_WST169)       /* (this fork, 2026-10-17) the 1.69: 14 x 12 cells of 20 px = 280 x 240 exactly (16 px
+                                                * cells would leave an 8 px strip on the right of 280) */
+#define ALGAE_CELL 20
+#define ALGAE_COLS 14
+#define ALGAE_ROWS 12
 #else
 #define ALGAE_CELL 16                          /* px per glass-film grid cell */
 #define ALGAE_COLS (TANK_W / ALGAE_CELL)       /* 28 */

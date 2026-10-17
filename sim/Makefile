@@ -20,6 +20,10 @@ SDL_LIBS   := $(shell sdl2-config --libs)
 # `make 320X240=1` (this fork): the 320 x 240 tank every 320 x 240 board shares -
 # the CYD, the Touch-LCD-2 (CYD.md) - as ./fishsim-320x240. It defines the
 # firmware's own CONFIG_POCKET_TANK_320X240, so common/ tests one symbol.
+# `make 280X240=1` (this fork, 2026-10-17): the Waveshare Touch-LCD-1.69's 280 x 240
+# tank as ./fishsim-280x240. It adds CONFIG_POCKET_TANK_WST169 to the 320X240 family
+# symbol (always both, as the Kconfig board entry selects them), so only the
+# width-dependent things in common/ branch on it.
 ifdef ROUND
 BUILD   := build-round
 OUT     := fishsim-round
@@ -36,6 +40,10 @@ else ifdef 320X240
 BUILD   := build-320x240
 OUT     := fishsim-320x240
 ROUNDF  := -DCONFIG_POCKET_TANK_320X240=1
+else ifdef 280X240
+BUILD   := build-280x240
+OUT     := fishsim-280x240
+ROUNDF  := -DCONFIG_POCKET_TANK_320X240=1 -DCONFIG_POCKET_TANK_WST169=1
 else
 BUILD   := build
 OUT     := fishsim
@@ -66,7 +74,8 @@ endif
 # `make check` tests the rectangle; `make ROUND=1 check` / `make WATCH=1 check` /
 # `make SQUARE=1 check` the same selftests in that board's world; `make check-all`
 # all four - the gate for anything in common/ (docs/BOARDS.md) - and, in this
-# fork, the 320 x 240 boards' (`make 320X240=1 check`) as the fifth
+# fork, the 320 x 240 boards' (`make 320X240=1 check`) as the fifth and the
+# Touch-LCD-1.69's 280 x 240 (`make 280X240=1 check`) as the sixth
 check: $(OUT)
 	@set -e; for test in $(SELFTESTS); do echo "RUN $(OUT) $$test"; ./$(OUT) "$$test"; done
 
@@ -76,6 +85,7 @@ check-all:
 	$(MAKE) WATCH=1 check
 	$(MAKE) SQUARE=1 check
 	$(MAKE) 320X240=1 check
+	$(MAKE) 280X240=1 check
 
 check-nomodel:
 	$(MAKE) NOMODEL=1 check
@@ -93,7 +103,7 @@ $(BUILD)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf build build-round build-watch build-square build-320x240 fishsim fishsim-round fishsim-watch fishsim-square fishsim-320x240
+	rm -rf build build-round build-watch build-square build-320x240 build-280x240 fishsim fishsim-round fishsim-watch fishsim-square fishsim-320x240 fishsim-280x240
 
 -include $(OBJS:.o=.d)
 

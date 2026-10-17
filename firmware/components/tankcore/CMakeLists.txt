@@ -37,6 +37,12 @@ endif()
 if(CONFIG_POCKET_TANK_WST_320X240)
     target_compile_definitions(${COMPONENT_LIB} PUBLIC CONFIG_POCKET_TANK_WST_320X240=1)
 endif()
+# (this fork, 2026-10-17) the Touch-LCD-1.69 at 280 x 240: always together with
+# CONFIG_POCKET_TANK_320X240 above (its Kconfig entry selects it); common/ asks
+# it only for the width and the board's name.
+if(CONFIG_POCKET_TANK_WST169)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC CONFIG_POCKET_TANK_WST169=1)
+endif()
 if(CONFIG_POCKET_TANK_SQUARE)  # the square's 480 x 480 tank
     target_compile_definitions(${COMPONENT_LIB} PUBLIC TANK_SQUARE)
 endif()

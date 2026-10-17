@@ -8,6 +8,8 @@ sim/build/
 sim/fishsim
 sim/build-320x240/
 sim/fishsim-320x240
+sim/build-280x240/
+sim/fishsim-280x240
 model/runw
 firmware/ref/
 model/runq4

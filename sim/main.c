@@ -1279,7 +1279,7 @@ static int selftest_saves(void) {
            old layout (300 algae cells, the tail 344 bytes early): only the CYD
            reads it (progression.c's load_save moves the tail) */
         bool cyd_layout = strstr(names[k], "-cyd.sav") != NULL;
-#ifndef CONFIG_POCKET_TANK_320X240
+#if !defined(CONFIG_POCKET_TANK_320X240) || defined(CONFIG_POCKET_TANK_WST169)   /* (this fork, 2026-10-17) the 1.69 has no pre-0.3.3 saves: progression.c does not read them back */
         if (cyd_layout) { printf("selftest-saves: %s: the CYD's old layout - the CYD's own (make 320X240=1)\n", names[k]); continue; }
 #endif
         /* today's layout: a 1432-byte save is the pre-bubble one - bubble_x (4 zero bytes) goes back in at 1404 */
@@ -1697,9 +1697,19 @@ static int selftest_tend(void) {
 #else
         const float scrub_y0 = 150;
 #endif
+#ifdef CONFIG_POCKET_TANK_WST169
+        /* (this fork, 2026-10-17) the 1.69's glass is 280 wide: bed 2 (x 174..270) stands under the stroke's start, 16 px
+           from bed 1's last frond, and a stroke that begins beside ITS tall fronds is armed (rightly). Bed 2 short for
+           this test, like bed 1's: the stroke then starts beside no frond tip, as on the wider boards */
+        float g_bed2 = tank.veg_growth[2];
+        tank_veg_set(&tank, 2, 0.3f);
+#endif
         for (float y = scrub_y0; y <= TANK_BOT - 10; y += 6)
             tank_touch_drag(&tank, fx2 + ((int)(y / 6) & 1 ? 14 : -14), y);
         tank_tick(&tank, 1.0f / 60.0f, advisor_rules); tank_tick(&tank, 1.0f / 60.0f, advisor_rules);
+#ifdef CONFIG_POCKET_TANK_WST169
+        tank_veg_set(&tank, 2, g_bed2);
+#endif
         int n; tank_veg_bed(&tank, 1, NULL, NULL, NULL, &n);
         for (int i = 0; i < n; i++)
             if (tank.veg_h[1][i] < before[i] - 0.001f) { printf("FAIL: scrub from mid-glass cut frond %d (%.2f -> %.2f)\n", i, before[i], tank.veg_h[1][i]); return 1; }
@@ -1896,6 +1906,11 @@ static int selftest_tend(void) {
     if (s_comfy > 1.5f) { printf("FAIL: comfortable canopy should let stress decay\n"); return 1; }
     if (s_two < 1.5f) { printf("FAIL: two beds past 85%% should smother\n"); return 1; }
     if (s_one >= s_open) { printf("FAIL: one tall bed should calm, not stress\n"); return 1; }
+#ifdef CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-17) the earlier floor sweeps clear a colony on the wider boards by luck of where the film grew;
+       the 1.69's 168 cells give them less to catch, so a lone patch is left for the squeegee below to take */
+    tank.algae[(ALGAE_ROWS - 3) * ALGAE_COLS + 3] = 90;
+#endif
     /* cleaning: squeegee strokes across every row of the glass */
     for (int y = 8; y < ALGAE_ROWS * ALGAE_CELL; y += ALGAE_CELL) {   /* (the film grid: the frame in the rectangle, down to the bowl's floor) */
         for (int x = 0; x <= TANK_W; x += 8) tank_touch_drag(&tank, (float)x, (float)y);
@@ -3091,7 +3106,10 @@ static int selftest_shop(void) {
     /* colonies: three 2 x 2 patches, one stroke through each */
     {
         memset(tank.algae, 0, sizeof tank.algae);
-#ifdef CONFIG_POCKET_TANK_320X240
+#ifdef CONFIG_POCKET_TANK_WST169
+        int c0[3] = { 1, 5, 9 };                  /* (this fork, 2026-10-17) the 1.69's glass is 14 cells wide (20 px cells): three
+                                                     patches 4 columns apart, the last ending at column 10 */
+#elif defined(CONFIG_POCKET_TANK_320X240)
         int c0[3] = { 3, 9, 15 };                 /* (this fork) the CYD's glass is 20 cells wide: column 21 is off it (and
                                                      wrapped onto the next row, it joined patch 0) */
 #else
@@ -3113,8 +3131,13 @@ static int selftest_shop(void) {
         memset(tank.algae, 0, sizeof tank.algae);
         /* the hundredth pays */
         tank.algae_colonies = SD_CHORE_EVERY - 1; tank.sd_colonies_paid = 0;
-        tank.algae[7 * ALGAE_COLS + 14] = 100;
-        for (float sx = 14 * ALGAE_CELL - 24; sx <= 14 * ALGAE_CELL + 32; sx += 4) tank_touch_drag(&tank, sx, 7 * ALGAE_CELL + 8);
+#ifdef CONFIG_POCKET_TANK_WST169
+        const int c100 = 11;                        /* (this fork, 2026-10-17) the 1.69's grid ends at column 13 (column 14 wrapped onto the next row) */
+#else
+        const int c100 = 14;
+#endif
+        tank.algae[7 * ALGAE_COLS + c100] = 100;
+        for (float sx = c100 * ALGAE_CELL - 24; sx <= c100 * ALGAE_CELL + 32; sx += 4) tank_touch_drag(&tank, sx, 7 * ALGAE_CELL + 8);
         SHOP_TICK(2); want += SD_CHORE; SHOP_WANT("100 colonies");
         if (tank.sd_colonies_paid != 1) { printf("FAIL: colonies paid count %d\n", tank.sd_colonies_paid); return 1; }
         printf("selftest-shop: 3 patches = 3 colonies, a half patch none, the 100th paid %d\n", SD_CHORE);
@@ -3406,9 +3429,14 @@ static int selftest_shop(void) {
             printf("selftest-shop: castle: IN FRONT a fish in the arch shows %d, behind the gate wall %d; BEHIND on the wall %d; grass over the walls BEHIND %d px, IN FRONT %d px\n",
                    in_arch, on_wall, on_wall_behind, diff[0], diff[1]);
             if (!in_arch || on_wall || !on_wall_behind || diff[0] == 0 || diff[1] != 0) { printf("FAIL: the castle's depths did not order the fish and the grass\n"); return 1; }
-            tank_decor_set(&tank, 2, FLOOR_X(260), DECOR_Z_BACK); progression_save(&tank);
+#ifdef CONFIG_POCKET_TANK_WST169
+            const float castle_x = FLOOR_X(224);   /* (this fork, 2026-10-17) the 1.69's floor lets the 184 px castle stand at x 122..158 only: 260 clamped to 158 */
+#else
+            const float castle_x = FLOOR_X(260);
+#endif
+            tank_decor_set(&tank, 2, castle_x, DECOR_Z_BACK); progression_save(&tank);
             { int nf = tank.n_fish; tank_init(&tank, 4242); progression_boot(&tank); tank.trickle_off = true;
-              if (tank.n_fish != nf || !(tank.sd_unlocks & SD_ITEM_CASTLE) || fabsf(tank_decor_x(&tank, 2) - FLOOR_X(260)) > 0.01f || tank_decor_z(&tank, 2) != DECOR_Z_BACK) {
+              if (tank.n_fish != nf || !(tank.sd_unlocks & SD_ITEM_CASTLE) || fabsf(tank_decor_x(&tank, 2) - castle_x) > 0.01f || tank_decor_z(&tank, 2) != DECOR_Z_BACK) {
                   printf("FAIL: the castle's placement was not saved (x %.0f, z %d)\n", tank_decor_x(&tank, 2), tank_decor_z(&tank, 2)); return 1; } }
             tank_decor_set(&tank, 2, FLOOR_X(300), DECOR_Z_FRONT);
             printf("selftest-shop: castle bought at %d, no AMONG, two-segment bar, dragged, DONE; the reload put it back at x 260, BEHIND\n", SD_PRICE_CASTLE);
@@ -3882,7 +3910,12 @@ static int selftest_shop(void) {
         /* the hit test: a press on the castle finds it, one on empty water does
            not, and the smaller coral wins where it overlaps the castle */
         tank.sd_unlocks = SD_ITEM_CASTLE | SD_ITEM_SNAIL; tank_decor_set(&tank, 2, 300, DECOR_Z_FRONT);
-        const float hx = tank_decor_x(&tank, 2), hy = TANK_BOT - 60, ex = TANK_FX0 + 60;   /* on the castle (where this floor lets it stand); empty floor left of it */
+#ifdef CONFIG_POCKET_TANK_WST169
+        const float ex_off = 20;   /* (this fork, 2026-10-17) the 1.69's castle stands at x 66..250 (hit zone wider): 60 px in is on it */
+#else
+        const float ex_off = 60;
+#endif
+        const float hx = tank_decor_x(&tank, 2), hy = TANK_BOT - 60, ex = TANK_FX0 + ex_off;   /* on the castle (where this floor lets it stand); empty floor left of it */
         if (tank_decor_hit(&tank, hx, hy) != 2 || tank_decor_hit(&tank, hx, 40) != -1 || tank_decor_hit(&tank, ex, hy) != -1) {
             printf("FAIL: the decoration hit test (%d %d %d)\n", tank_decor_hit(&tank, hx, hy), tank_decor_hit(&tank, hx, 40), tank_decor_hit(&tank, ex, hy)); return 1; }
         tank.sd_unlocks |= SD_ITEM_CORAL; tank_coral_place(&tank); tank_decor_set(&tank, 3, hx, DECOR_Z_FRONT);
