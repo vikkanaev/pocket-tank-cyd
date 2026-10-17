@@ -62,6 +62,11 @@ static int  s_set_what, s_set_val;                /* a segment tapped: SET_TAP_*
 static bool s_pill;                               /* main.c drew the battery pill this frame: a tap on it is its page's */
 static bool s_bat; static int64_t s_bat_us;       /* the battery page up, and since when (it closes itself) */
 static bool s_swallow;                            /* the tank just lit from the dark: no gesture until the glass is clear */
+#if CONFIG_POCKET_TANK_WST169
+static esp_lcd_panel_io_handle_t s_tp_io;         /* (this fork, 2026-10-17) the CST816T's panel IO, for touch_port_doze's 0xFE */
+static bool s_wake_due;                           /* ... a 0xFE = 1 the dozing chip did not hear: written at its next answer */
+static bool cst_write_fe(uint8_t v);
+#endif
 #define BATTERY_PAGE_US (30LL * 1000000)
 #define CONFIRM_TIMEOUT_US (20LL * 1000000)
 static bool s_inverted;                           /* screen 180-flipped: mirror into tank space */
@@ -257,6 +262,10 @@ static bool panel_read(uint16_t *x, uint16_t *y) {
        reads as before. Only the 1.69: the Touch-LCD-2's poll is left as it
        was (its dark-path probe, touch_port_finger_now, is older). */
     if (i2c_master_probe(board_i2c_bus(), I2C_ADDR_CST816D, 20) != ESP_OK) return false;
+    /* (this fork, 2026-10-17) the dark let it doze and the wake's 0xFE = 1
+       found it asleep (a PWR or motion wake: no finger woke it); it answers
+       now, so it hears the write - once */
+    if (s_wake_due && cst_write_fe(0x01)) { s_wake_due = false; ESP_LOGI(TAG, "CST816T awake again: auto-sleep off (0xFE = 1, written late)"); }
 #endif
     esp_lcd_touch_read_data(s_tp);
     if (!esp_lcd_touch_get_coordinates(s_tp, x, y, st, &n, 1) || n == 0) return false;
@@ -315,6 +324,7 @@ static bool cst816d_init(void) {
         .flags = { .swap_xy = TOUCH_SWAP_XY, .mirror_x = TOUCH_MIRROR_X, .mirror_y = TOUCH_MIRROR_Y } };
     if (esp_lcd_touch_new_i2c_cst816s(io, &tp_cfg, &s_tp) != ESP_OK) { ESP_LOGW(TAG, "no CST816D"); return false; }
 #if CONFIG_POCKET_TANK_WST169
+    s_tp_io = io;                                 /* touch_port_doze writes 0xFE through it */
     /* (this fork, 2026-10-17) The CST816T dozes when idle (the boot scan,
        before the driver's reset, found nothing at 0x15; half a second after
        it the reads began to NACK) and answers I2C again only when touched.
@@ -864,6 +874,31 @@ bool touch_port_finger_now(void) {
     return esp_lcd_touch_get_data(s_tp, point, &n, 1) == ESP_OK && n > 0;
 }
 void touch_port_swallow(void) { s_swallow = true; }
+#if CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) The dark's light sleep on battery (main.c's
+ * enter_dark, the spec's clarification 5): the CST816T's DisAutoSleep,
+ * 0xFE, back to 0 so the chip dozes too while the board sleeps, and 1 again
+ * at the wake (cst816d_init's setting). A dozing chip NACKs until it is
+ * touched; the probe first keeps a NACK silent (no driver error lines), and
+ * a 1 it could not hear is left to panel_read, which writes it at the
+ * chip's first answer. Whether the dozing chip still pulses INT on a touch
+ * (the dark's wake) is the battery bench's question; if not, this goes back
+ * to leaving 0xFE at 1. */
+static bool cst_write_fe(uint8_t v) {
+    if (!s_tp_io || i2c_master_probe(board_i2c_bus(), I2C_ADDR_CST816D, 20) != ESP_OK) return false;
+    return esp_lcd_panel_io_tx_param(s_tp_io, 0xFE, &v, 1) == ESP_OK;
+}
+void touch_port_doze(bool doze) {
+    if (!s_tp_io) return;
+    bool ok = cst_write_fe(doze ? 0x00 : 0x01);
+    s_wake_due = !doze && !ok;
+    if (doze) ESP_LOGI(TAG, "CST816T %s", ok ? "may doze through the dark (0xFE = 0)" : "did not answer the doze write (0xFE stays as it was)");
+    else if (ok) ESP_LOGI(TAG, "CST816T awake: auto-sleep off (0xFE = 1)");
+    else ESP_LOGI(TAG, "CST816T dozing at the wake: 0xFE = 1 waits for its first answer");
+}
+#else
+void touch_port_doze(bool doze) { (void)doze; }   /* only the 1.69 dozes its touch in the dark */
+#endif
 #if CONFIG_POCKET_TANK_320X240
 /* The touch controller's INT, PIN_TP_INT in board_pins.h, which the game
  * never uses: it polls. A floating or dead line costs nothing: the pull-up

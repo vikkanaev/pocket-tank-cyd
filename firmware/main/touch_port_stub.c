@@ -46,3 +46,4 @@ void touch_port_raw_seen(int *x0, int *x1, int *y0, int *y1) { *x0 = *y0 = 0; *x
 bool touch_port_finger_now(void) { return false; }
 void touch_port_swallow(void) { }
 int  touch_port_wake_gpio(void) { return -1; }
+void touch_port_doze(bool doze) { (void)doze; }

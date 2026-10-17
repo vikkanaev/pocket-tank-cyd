@@ -123,6 +123,30 @@ extern const uint8_t tokenizer_bin_end[]   asm("_binary_tokenizer_bin_end");
 
 static const char *TAG = "pocket-tank";
 static tank_t tank;
+#if CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) the Touch-LCD-1.69: no PMIC. The PWR key is a
+ * level on GPIO 40 (battery_port_adc.c samples it into the press detector);
+ * the dark reads the pin itself too, since the 10 ms sampler, an esp_timer,
+ * does not run while the chip light-sleeps. Valid after
+ * battery_port_key_init (it sets the pad up as an input). */
+#include "pwr_logic.h"
+static bool pwr_key_held(void) { return gpio_get_level(PIN_PWR_KEY) == PWR_KEY_ACTIVE_LEVEL; }
+/* the low-battery cutoff (the spec: below 3.30 V for 30 s off the cable),
+ * asked once a second by the tank loop and by the dark alike - a night in
+ * the dark on the battery is where the cell runs down */
+static pwr_cutoff_t s_cutoff;
+static bool low_battery_due(int64_t now) {
+    static int64_t last;
+    if (last && now - last < 1000000) return false;
+    last = now;
+    int mv = battery_port_vbat_mv();         /* first: the read that state then answers from */
+    bool cable = BAT_ON_POWER(battery_port_state());
+    if (!pwr_cutoff_due(&s_cutoff, cable, mv, now)) return false;
+    ESP_LOGW(TAG, "battery %d mV, under %d mV for %d s off the cable: power-off", mv, PWR_EMPTY_MV, PWR_CUTOFF_US / 1000000);
+    s_cutoff = (pwr_cutoff_t){ 0 };          /* a power-off that stays up (a charger) starts the 30 s again */
+    return true;
+}
+#endif
 static uint16_t *fb[PLAN_FB_COUNT];
 static bool llm_ok = false;
 
@@ -158,6 +182,7 @@ static void enter_poweroff(void);
 static void deep_sleep_now(int wake_after_s);
 #if CONFIG_POCKET_TANK_SLEEP_SCREEN || CONFIG_POCKET_TANK_SLEEP_LIGHT || SLEEP_SETTING_ROW
 static void enter_dark(int wake_after_s, bool by_face);
+static bool dark_run(int wake_after_s, bool by_face);   /* the dark itself: true = it ended in a power-off (WST169) */
 #endif
 static bat_t s_bh;                          /* the battery page's history: NVS "bat"/"hist" (its own namespace - a tank reset leaves it) */
 static void bat_hist_save(void);            /* at sleep too: the screen-on time so far */
@@ -584,11 +609,21 @@ static void dark_wait(int64_t us, int touch_int, bool light) {
            holds would end every slice at once */
         bool touch_armed = touch_int >= 0 && gpio_get_level((gpio_num_t)touch_int);
         if (touch_armed) gpio_wakeup_enable((gpio_num_t)touch_int, GPIO_INTR_LOW_LEVEL);
+#if CONFIG_POCKET_TANK_WST169
+        /* (this fork, 2026-10-17) the PWR key wakes the slice at once (the
+           10 ms sampler sleeps with the chip): armed only while released, as
+           the touch INT - a held level would end every slice */
+        bool pwr_armed = !pwr_key_held();
+        if (pwr_armed) gpio_wakeup_enable(PIN_PWR_KEY, PWR_KEY_ACTIVE_LEVEL ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+#endif
         esp_sleep_enable_gpio_wakeup();
         esp_sleep_enable_timer_wakeup(us);
         esp_err_t slept = esp_light_sleep_start();
         gpio_wakeup_disable(BTN_SLEEP);
         if (touch_armed) gpio_wakeup_disable((gpio_num_t)touch_int);
+#if CONFIG_POCKET_TANK_WST169
+        if (pwr_armed) gpio_wakeup_disable(PIN_PWR_KEY);
+#endif
         esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);  /* sticky in ESP-IDF: see enter_sleep_for */
         if (slept == ESP_OK) return;
         /* refused (a wake already pending): wait awake this once, never spin */
@@ -600,7 +635,43 @@ static void dark_wait(int64_t us, int touch_int, bool light) {
     vTaskDelay(ticks > 0 ? ticks : 1);
 }
 
+#if CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) the PWR key in the dark (the spec's clarification
+ * 4): 0 nothing, 1 a press that wakes, 2 a hold that powers off. The pin is
+ * read at each look, since the slice that ended may be the key's own GPIO
+ * wake and the sampler was asleep with the chip; a press already seen and
+ * released by the sampler (an awake dark) comes from key_poll. A press seen
+ * down is waited out here: released under 1.5 s it wakes (under 30 ms it is
+ * contact bounce, and the dark goes on), still held at 1.5 s it is the
+ * power switch - so a long hold begun in the dark powers off rather than
+ * lighting the tank on its way down. */
+static int dark_pwr_key(void) {
+    int e = battery_port_key_poll();
+    if (e) return e;
+    if (!pwr_key_held()) return 0;
+    int64_t t = esp_timer_get_time();
+    while (pwr_key_held()) {
+        if (esp_timer_get_time() - t >= PWR_LONG_US) return 2;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    return esp_timer_get_time() - t >= PWR_MIN_PRESS_US ? 1 : 0;
+}
+#define DARK_WAKES_PWR ", PWR"
+#else
+#define DARK_WAKES_PWR ""
+#endif
+
+/* any sleep's dark (enter_sleep_for). On the WST169 a long PWR press or the
+   low-battery cutoff in it is a power-off, done once the dark has unwound */
 static void enter_dark(int wake_after_s, bool by_face) {
+    if (dark_run(wake_after_s, by_face)) enter_poweroff();
+}
+
+/* the dark: true when it ended in a power-off request (the WST169's PWR key
+   held 1.5 s, or the low-battery cutoff) - the dark's time is lived through
+   and its pins and touch let go, but the screen stays off and the caller
+   cuts the power. false: a wake, the tank lit again where it was. */
+static bool dark_run(int wake_after_s, bool by_face) {
     int pct0 = battery_pct(), mv0 = battery_port_vbat_mv();
     touch_port_confirm_answer(-1);              /* an open reset prompt is a NO */
     if (!progression_save(&tank))               /* if the cell dies in the dark, this save is the tank */
@@ -610,7 +681,16 @@ static void enter_dark(int wake_after_s, bool by_face) {
     batlog_add(pct0, mv0, display_port_brightness(), true, "sleep");
     display_port_sleep();                       /* backlight off, panel off */
     while (!gpio_get_level(BTN_SLEEP)) vTaskDelay(pdMS_TO_TICKS(10));   /* BOOT is a level wake: never arm it held */
+#if CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-17) the PWR key too: never armed held, and a hold
+       still down here (the long press of a power-off that stayed up on USB)
+       is not the dark's first press */
+    while (pwr_key_held()) vTaskDelay(pdMS_TO_TICKS(10));
+#endif
     vTaskDelay(pdMS_TO_TICKS(30));
+#if CONFIG_POCKET_TANK_WST169
+    battery_port_key_swallow();                 /* the press that asked for this dark (queued, or its release) is not one in it */
+#endif
     imu_port_rest_begin();
     int touch_int = by_face ? -1 : touch_port_wake_gpio();
     /* whether this dark light-sleeps, asked once: the pins it holds at the
@@ -620,13 +700,19 @@ static void enter_dark(int wake_after_s, bool by_face) {
 #if CONFIG_POCKET_TANK_SLEEP_LIGHT || SLEEP_SETTING_ROW
     bool light = dark_light_sleeps();
     const char *usb = light && usb_serial_jtag_is_connected() ? ", awake while a USB host is attached" : "";
+    /* (this fork, 2026-10-17) the touch dozes only in a dark that really
+       light-sleeps (the spec's clarification 5): awake, the chip's doze
+       saves nothing worth a touch it may not hear. Asked once, as `light` */
+    bool dozed = light && !usb_serial_jtag_is_connected();
 #else
     bool light = false;
     const char *usb = "";
+    bool dozed = false;
 #endif
-    ESP_LOGI(TAG, "dark (%s, %s%s): wakes on %s, BOOT%s | battery %d%% %d mV",
-             s_sleep_why, SLEEP_MODE_NAME, usb, by_face ? "face up" : "a touch, motion",
+    ESP_LOGI(TAG, "dark (%s, %s%s): wakes on %s, BOOT%s%s | battery %d%% %d mV",
+             s_sleep_why, SLEEP_MODE_NAME, usb, by_face ? "face up" : "a touch, motion", DARK_WAKES_PWR,
              wake_after_s > 0 ? ", the timer" : "", pct0, mv0);
+    if (dozed) touch_port_doze(true);           /* nothing on every board but the WST169 */
 #if CONFIG_POCKET_TANK_SLEEP_LIGHT || SLEEP_SETTING_ROW
     if (light) dark_hold_pins(true);            /* the board's held outputs (board_pins.h) keep their level in each slice */
 #endif
@@ -636,6 +722,7 @@ static void enter_dark(int wake_after_s, bool by_face) {
     int face_up = 0;                            /* IMU reads in a row not face down (a dark begun face down) */
     const char *why = NULL;
     int moved = 0;
+    bool off = false;                           /* (WST169) the dark ends in a power-off */
     for (int look = 1; ; look++) {
         int64_t now = esp_timer_get_time();
         if (until && now >= until) { why = "the timer"; break; }
@@ -645,8 +732,18 @@ static void enter_dark(int wake_after_s, bool by_face) {
             if (!touch_port_finger_now()) glass_clear = true;
             else if (glass_clear) { why = "a touch"; break; }
         }
+#if CONFIG_POCKET_TANK_WST169
+        /* (this fork, 2026-10-17) the PWR key at every look, not every
+           DARK_SLOW_EVERY: it is the board's one key and a GPIO wake */
+        { int k = dark_pwr_key();
+          if (k == 2) { why = "the PWR key, held"; off = true; break; }
+          if (k == 1) { why = "the PWR key"; break; } }
+        if (low_battery_due(esp_timer_get_time())) { why = "low battery"; off = true; break; }
+#endif
         if (look % DARK_SLOW_EVERY != 0) continue;
+#if !CONFIG_POCKET_TANK_WST169
         if (battery_port_key_poll()) { why = "the PWR key"; break; }
+#endif
         /* no answer from the IMU keeps it dark: a bus hiccup must not wake it */
         if (by_face) {
             /* face up on two reads in a row, 0.2 s apart. One read out of the
@@ -665,17 +762,29 @@ static void enter_dark(int wake_after_s, bool by_face) {
 #if CONFIG_POCKET_TANK_SLEEP_LIGHT || SLEEP_SETTING_ROW
     if (light) dark_hold_pins(false);
 #endif
+    if (dozed) touch_port_doze(false);          /* 0xFE = 1 again (late, at the chip's next answer, if it dozes now) */
     while (!gpio_get_level(BTN_SLEEP)) vTaskDelay(pdMS_TO_TICKS(10));   /* a BOOT wake press, still down */
     float dark_s = (esp_timer_get_time() - t0) / 1e6f;
+    /* lived through before a power-off too: its save is stamped now, and a
+       save of the tank as it went dark would lose the dark's time */
     progression_slept(&tank, dark_s < PROGRESSION_SLEEP_CAP_S ? dark_s : (float)PROGRESSION_SLEEP_CAP_S);
     progression_woke(&tank);                    /* a fry that was on its way: born now */
     battery_woke(&s_bh);                        /* what the gauge lost in the dark is no screen-on drain */
+    if (off) {                                  /* (WST169) the screen stays off: the caller cuts the power */
+        ESP_LOGI(TAG, "dark ended by %s after %.0f s: power-off", why, dark_s);
+        s_sleep_why = why;
+        return true;
+    }
+#if CONFIG_POCKET_TANK_WST169
+    battery_port_key_swallow();                 /* the waking press (released by now) and anything it queued: not a new sleep press */
+#endif
     display_port_wake();
     touch_port_swallow();                       /* the waking finger does nothing in the tank */
     batlog_add(battery_pct(), battery_port_vbat_mv(), display_port_brightness(), false, "woke");
     s_btn_armed = false; s_btn_low_since = 0;   /* BOOT's release is not a new press */
     if (moved) ESP_LOGI(TAG, "lit by motion (%d off the rest pose) after %.0f s dark", moved, dark_s);
     else ESP_LOGI(TAG, "lit by %s after %.0f s dark", why, dark_s);
+    return false;
 }
 #endif
 
@@ -684,6 +793,52 @@ void device_sleep(int wake_after_s) { s_sleep_why = "the director"; enter_sleep_
 /* the PWR key held 1.5 s: save and cut NOW, no grace (the same power-off the
  * grace ends in). No PMIC: deep sleep. */
 static void enter_poweroff(void) {
+#if CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-17) the Touch-LCD-1.69: SYS_EN low is the power
+     * switch, and it sits BEFORE the SLEEP row's shortcut below on purpose
+     * (the spec's clarification 1): a long PWR press is the board's off
+     * switch, not a sleep, so it powers off whatever the row says - NEVER
+     * included, which ignores only the short press (enter_sleep_for). The
+     * low-battery cutoff comes here too. On USB the board stays up with
+     * SYS_EN low: then it goes dark instead, and a long press or the cutoff
+     * in that dark comes round this loop again (a loop, not a recursion
+     * through enter_dark, so repeated presses on the cable never stack). */
+    for (;;) {
+        ESP_LOGI(TAG, "power-off now (%s): saving tank, SYS_EN low (the PWR key boots)", s_sleep_why);
+        touch_port_confirm_answer(-1);
+        if (!progression_save(&tank))               /* never cancels (see enter_sleep_for) */
+            ESP_LOGE(TAG, "power-off: the tank save failed - cutting anyway, the last good save stands");
+        bat_hist_save();
+        audio_port_sleep();
+        batlog_add(battery_pct(), battery_port_vbat_mv(), display_port_brightness(), true, "off");   /* to NVS too: the shelf time is measurable at the next boot */
+        imu_port_sleep();
+        display_port_sleep();                       /* the keeper's sign that the press took: the glass goes dark at 1.5 s */
+        vTaskDelay(pdMS_TO_TICKS(50));
+        battery_port_poweroff();                    /* SYS_EN: hold off, LOW */
+        /* the PWR key powers the board while it is down (that is how a press
+           boots it), so the long press that got here still holds the rails
+           up: on battery the board drops at its release. Wait it out (10 s
+           at most: a stuck key) before deciding it stayed up. */
+        int64_t t = esp_timer_get_time();
+        while (pwr_key_held() && esp_timer_get_time() - t < 10000000) vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1000));            /* on battery the rails are gone well before this */
+        ESP_LOGW(TAG, "SYS_EN low but still powered (USB) - going dark instead");
+        /* latched again: the board now behaves as any dark one does. Left
+           low, pulling the cable later would cut a tank that may have been
+           woken and played with since this save, with no save and no line
+           in the log; a keeper who wants it off unplugs it and long-presses
+           again, on the battery. */
+        board_power_latch();
+        s_cutoff = (pwr_cutoff_t){ 0 };
+        imu_port_wake();                            /* the dark wakes on motion: the IMU slept above */
+        s_sleep_why = "a power-off that stayed up on USB";
+#if CONFIG_POCKET_TANK_SLEEP_SCREEN || CONFIG_POCKET_TANK_SLEEP_LIGHT || SLEEP_SETTING_ROW
+        if (!dark_run(0, false)) return;            /* woken: the tank runs on */
+#else
+        deep_sleep_now(0);                          /* a WST169 built for deepsleep has no dark (no row): BOOT wakes */
+#endif
+    }
+#endif
 #ifndef SLEEP_MODE_DEEP
     enter_sleep_for(0);   /* none (a 320x240 board: NEVER): ignored there, with its line; screen, lightsleep: the dark, as any sleep */
     return;
@@ -882,6 +1037,12 @@ static void tank_task(void *arg) {
         if (slept_from) sleep_us += now - slept_from;
         sleep_button_poll(now);
         pwr_key_poll(now);
+#if CONFIG_POCKET_TANK_WST169
+        /* (this fork, 2026-10-17) no PMIC to cut a flat cell: the firmware
+           does, once a second (low_battery_due), before the cell's own
+           protection would drop the board without a save */
+        if (low_battery_due(now)) { s_sleep_why = "low battery"; enter_poweroff(); }
+#endif
         imu_port_poll(now);
         if (imu_port_moving()) audio_port_prewarm();   /* in a hand: the codec stays warm (docs/AUDIO.md) */
         if (imu_port_handled()) tank_handled(&tank);   /* ... and the light stays on (two polls of motion: a bump on the desk is not a pick-up) */
@@ -1231,6 +1392,27 @@ void app_main(void) {
     }
     touch_port_init();
     s_pmic = battery_port_init(board_i2c_bus());
+#if CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-17) a cell too flat to boot on (the spec: under
+       3.20 V off the cable): off at once, before the screen lights or the
+       save is touched - the tank is as the last power-off left it */
+    { int mv = battery_port_vbat_mv();
+      if (pwr_boot_too_low(BAT_ON_POWER(battery_port_state()), mv)) {
+          ESP_LOGW(TAG, "boot: battery %d mV, under %d mV off the cable - powering off at once", mv, PWR_BOOT_LOW_MV);
+          batlog_add(battery_pct(), mv, 0, true, "off");  /* "off" is mirrored to NVS (batlog.c): the next boot reads the flat cell back */
+          battery_port_key_init();                     /* GPIO 40 as an input: the power-on press is read below */
+          battery_port_poweroff();
+          /* the power-on press holds the rails up while it is down: the board drops at its release */
+          int64_t t = esp_timer_get_time();
+          while (pwr_key_held() && esp_timer_get_time() - t < 10000000) vTaskDelay(pdMS_TO_TICKS(10));
+          vTaskDelay(pdMS_TO_TICKS(1000));
+          /* still here: a charger the cable guess cannot see yet (no USB host,
+             no 3 minutes of rising VBAT). Latched again and booted: the
+             charger is filling the cell */
+          ESP_LOGW(TAG, "boot: SYS_EN low but still powered (a charger) - booting after all");
+          board_power_latch();
+      } }
+#endif
     if (!board_has_expander()) {      /* not positively the 1.8: on the round board A3V3 feeds the ES7210 whole,
                                          and off, it clamps the I2C bus (battery_port.h) - never cut it on a guess */
         battery_port_pin_rail("aldo1");

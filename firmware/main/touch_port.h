@@ -76,4 +76,11 @@ void touch_port_raw_seen(int *x0, int *x1, int *y0, int *y1);   /* the raw repor
 bool touch_port_finger_now(void);
 void touch_port_swallow(void);
 int  touch_port_wake_gpio(void);
+/* (this fork, 2026-10-17) the dark's light sleep on the WST169: doze = true
+ * lets the CST816T's own auto-sleep run (register 0xFE = 0) while the board
+ * light-sleeps on its battery, false keeps it awake again (0xFE = 1, as
+ * cst816d_init leaves it). A dozing chip answers no I2C until it is touched,
+ * so a "false" it cannot hear is written at the first read that it answers.
+ * Every other board: nothing. */
+void touch_port_doze(bool doze);
 #endif
