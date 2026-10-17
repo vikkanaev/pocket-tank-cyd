@@ -21,11 +21,11 @@ bool battery_port_poweroff(void);                      /* PMIC soft power-off; f
  * + clears them: 0 nothing, 1 short press, 2 long press (IRQLEVEL, 1.5 s). */
 void battery_port_key_init(void);
 int  battery_port_key_poll(void);
-void battery_port_key_trace(int seconds);
+void battery_port_key_trace(int seconds);   /* bench: log each press's length for N s (director `keytime`) */
 /* (this fork, 2026-10-17) drop every key event waiting, and a press still
  * held counts for nothing at its release (the press that woke the board is
  * not a new one). The AXP2101 drains its IRQs (key_poll until 0). */
-void battery_port_key_swallow(void);   /* bench: log each press's length for N s (director `keytime`) */
+void battery_port_key_swallow(void);
 /* diagnostics: the AXP2101's rail enables + voltages, charger setting, VBAT
  * and state of charge, decoded to the log (read-only). VBAT in mV, 0 = n/a. */
 void battery_port_dump(void);

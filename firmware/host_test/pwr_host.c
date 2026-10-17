@@ -61,6 +61,20 @@ int main(void) {
     pwr_key_swallow(&k, false);
     CHECK(pwr_key_take(&k) == 0, "swallow left a pending press");
 
+    /* a 20 ms blip is contact bounce: nothing */
+    pwr_key_init(&k, false); t = 20000 * MS;
+    feed(&k, false, 50 * MS, NULL);
+    feed(&k, true, 20 * MS, NULL);
+    CHECK(feed(&k, false, 100 * MS, NULL) == 0, "a 20 ms press gave an event");
+    /* a hold never sampled at 1.5 s (the sampler paused in a light sleep):
+       2 at its release, and nothing more */
+    pwr_key_sample(&k, true, t); CHECK(pwr_key_take(&k) == 0, "a press gave an event at its start");
+    t += 2000 * MS;
+    pwr_key_sample(&k, false, t);
+    CHECK(pwr_key_take(&k) == 2, "a 2 s hold sampled only at its ends did not give 2 at the release");
+    t += 10 * MS;
+    CHECK(feed(&k, false, 200 * MS, NULL) == 0, "the late long press gave a second event");
+
     /* the percent curve */
     CHECK(pwr_pct(4150) == 1.0f, "pwr_pct(4150) = %f", (double)pwr_pct(4150));
     CHECK(pwr_pct(3300) == 0.0f, "pwr_pct(3300) = %f", (double)pwr_pct(3300));

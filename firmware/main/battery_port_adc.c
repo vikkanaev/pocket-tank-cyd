@@ -141,6 +141,7 @@ bool battery_port_poweroff(void) {
 static pwr_key_t s_key;
 static portMUX_TYPE s_key_mux = portMUX_INITIALIZER_UNLOCKED;
 static esp_timer_handle_t s_key_timer;
+static volatile bool s_tracing;                /* key_trace runs: the tank task's key_poll sees nothing (a press there must not sleep it) */
 
 static bool key_down(void) { return gpio_get_level(PIN_PWR_KEY) == PWR_KEY_ACTIVE_LEVEL; }
 
@@ -171,7 +172,7 @@ void battery_port_key_init(void) {
 }
 
 int battery_port_key_poll(void) {
-    if (!s_key_timer) return 0;
+    if (!s_key_timer || s_tracing) return 0;
     portENTER_CRITICAL(&s_key_mux);
     int e = pwr_key_take(&s_key);
     portEXIT_CRITICAL(&s_key_mux);
@@ -194,6 +195,7 @@ void battery_port_key_trace(int seconds) {
     ESP_LOGI(TAG, "key trace: press the PWR key a few times, naturally, in the next %d s (GPIO %d, active %d; the tank holds still; nothing sleeps)",
              seconds, PIN_PWR_KEY, PWR_KEY_ACTIVE_LEVEL);
     if (was) down = esp_timer_get_time();
+    s_tracing = true;                          /* the timer still queues: dropped by the swallow at the end */
     while (esp_timer_get_time() < end) {
         bool d = key_down(); int64_t now = esp_timer_get_time();
         if (d && !was) down = now;
@@ -207,7 +209,8 @@ void battery_port_key_trace(int seconds) {
         was = d;
         vTaskDelay(pdMS_TO_TICKS(2));
     }
-    battery_port_key_swallow();
+    battery_port_key_swallow();                /* first, then the poll opens: nothing from the trace leaks out */
+    s_tracing = false;
     ESP_LOGI(TAG, "key trace over: %d presses", n);
 }
 
