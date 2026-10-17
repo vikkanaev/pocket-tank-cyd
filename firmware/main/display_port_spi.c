@@ -94,6 +94,11 @@ bool display_port_init(void) {
     /* Who answers on the shared bus: the bring-up question for the codec. */
     for (int address = 0x08; address < 0x78; address++)
         if (i2c_master_probe(s_i2c, address, 20) == ESP_OK) ESP_LOGI(TAG, "i2c: device at 0x%02X", address);
+#if CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-17) the scan runs before touch_port_init's reset, and
+       the CST816T dozes until then: its absence here is expected */
+    ESP_LOGI(TAG, "i2c: touch 0x15 may be missing above: the CST816T dozes until its reset (touch_port_init)");
+#endif
 
     backlight_init();                               /* dark until the first frame is in */
 #if CONFIG_POCKET_TANK_WST_320X240   /* (this fork, 2026-10-17) never the Touch-LCD-1.69: its GPIO41 is left alone in phase 1 (board_pins.h) */
