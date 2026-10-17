@@ -132,6 +132,57 @@
  * the CST816D is not reset by a slice, as a floating FT6336 reset could be
  * on the CYD. No amplifier: there is no codec. */
 #define BOARD_DARK_HELD_PINS PIN_LCD_BL, PIN_SD_CS
+#elif CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) The Waveshare ESP32-S3-Touch-LCD-1.69 (the wiki's
+ * pin table and schematic; docs/superpowers/specs/2026-10-17-wst169-port-design.md).
+ * A 1.69" ST7789V2 IPS, 240 x 280 with rounded corners, inside the
+ * controller's 240 x 320 frame (LCD_GAP_X below); a CST816T touch panel with
+ * its own reset line; a QMI8658 IMU at 0x6B and a PCF85063 RTC at 0x51 on
+ * the same bus. No codec, no PMIC, no TF card.
+ *
+ * Phase 1 (over USB) deliberately configures none of GPIO 33, 35, 36, 40, 41
+ * and 42: across the two board revisions they are the power latch (SYS_EN),
+ * the PWR key sense (SYS_OUT) and the passive buzzer. Which revision is on
+ * the desk is not settled yet, and from USB none of them is needed: drive
+ * the wrong one and the board could cut its own power on battery, or the
+ * buzzer could sound. So no SYS_EN, PWR, buzzer or battery ADC is named
+ * here, and nothing below lands on those pins. */
+#define PIN_LCD_CS        5
+#define PIN_LCD_DC        4        /* high = data, low = command */
+#define PIN_LCD_SCLK      6
+#define PIN_LCD_MOSI      7
+#define PIN_LCD_MISO      -1       /* write-only panel, no TF card */
+#define PIN_LCD_RST       8        /* low = reset: esp_lcd_panel_reset pulses it */
+#define PIN_LCD_BL        15       /* high = backlight on; PWM for brightness */
+/* Starting values for the bench (Task 5): the Touch-LCD-2's landscape
+ * (MX | MV, RGB order, IPS inversion on), clocked at 40 MHz until the
+ * picture is right. */
+#define LCD_PCLK_HZ       (40 * 1000 * 1000)
+#define LCD_SWAP_XY       true
+#define LCD_MIRROR_X      true
+#define LCD_MIRROR_Y      false
+#define LCD_BGR           false
+#define LCD_INVERT        true
+/* The 240 x 280 glass sits 20 rows into the controller's 320; with MV on
+ * those rows run along the landscape x, so the gap is in x
+ * (display_port_spi.c, after apply_orientation). */
+#define LCD_GAP_X         20
+#define LCD_GAP_Y         0
+#define PIN_I2C_SDA       11       /* shared: touch, IMU, RTC */
+#define PIN_I2C_SCL       10
+#define PIN_TP_RST        13       /* low = reset; the CST816T driver pulses it */
+#define PIN_TP_INT        14       /* the CST816T's INT, active low; the port polls, the dark arms it as a wake */
+#define I2C_ADDR_CST816D  0x15     /* the CST816T answers where the Touch-LCD-2's CST816D does */
+#define PIN_IMU_INT1      38       /* QMI8658 at 0x6B, unused (the port polls) */
+#define PANEL_W           240      /* native portrait; the panel scans landscape (MADCTL) */
+#define PANEL_H           280
+/* The outputs the dark holds through light sleep (main.c's dark_hold_pins):
+ *  - the backlight (GPIO15, LEDC at duty 0), as on the other boards;
+ *  - the LCD's reset (GPIO8, driven high) and the touch reset (GPIO13,
+ *    driven high): unlike the Touch-LCD-2's shared, pulled-up net these are
+ *    GPIOs, and an isolated, floating reset could reset the panel or the
+ *    CST816T in a slice, as a floating FT6336 reset could on the CYD. */
+#define BOARD_DARK_HELD_PINS PIN_LCD_BL, PIN_LCD_RST, PIN_TP_RST
 #else
 #define PIN_LCD_CS        12
 #define PIN_LCD_PCLK      11

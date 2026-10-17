@@ -1,0 +1,28 @@
+# The Waveshare ESP32-S3-Touch-LCD-1.69 (this fork, 2026-10-17): layered over
+# sdkconfig.defaults, as the Touch-LCD-2's file is. ESP32-S3R8 - 16 MB flash
+# and 8 MB octal PSRAM - with a 1.69" ST7789V2 IPS (240 x 280 with rounded
+# corners, scanned landscape 280 x 240), a CST816T touch panel with its own
+# reset line, a QMI8658 IMU, a PCF85063 RTC and a passive buzzer. No codec,
+# no PMIC: the audio port is the stub, the battery meter stays hidden (no
+# AXP2101 answers) and the clock is the system time. Phase 1 runs over USB
+# and leaves the power latch (SYS_EN), the PWR key and the buzzer alone
+# (board_pins.h says why).
+#
+#   tools/build_wst169.sh            # build into build_wst169/
+#   idf.py -B build_wst169 -D SDKCONFIG=build_wst169/sdkconfig \
+#          -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.wst169" build
+CONFIG_POCKET_TANK_WST169=y
+CONFIG_POCKET_TANK_DISPLAY_SH8601=n
+CONFIG_POCKET_TANK_DISPLAY_ST7789=y
+CONFIG_POCKET_TANK_TOUCH_FT3168=y
+CONFIG_POCKET_TANK_AUDIO_ES8311=n
+# The QMI8658 senses handling (the tank light) but does not turn the picture,
+# as on the Touch-LCD-2: its axes on this board are not measured yet. The
+# settings page's SCREEN row sets which way up the picture is.
+CONFIG_POCKET_TANK_IMU_QMI8658=y
+CONFIG_POCKET_TANK_IMU_MPU6050=n
+CONFIG_POCKET_TANK_IMU_AUTO_FLIP=n
+# Sleep goes dark and light-sleeps, never deep, as the Touch-LCD-2's does: a
+# touch or a pick-up lights it again where it was. Only the factory default:
+# the settings page's SLEEP row changes it at run time (NVS tank/sleep).
+CONFIG_POCKET_TANK_SLEEP_LIGHT=y

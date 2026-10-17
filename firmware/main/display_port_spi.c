@@ -2,6 +2,10 @@
  * via esp_lcd over 4-wire SPI:
  *   - the 2.8" ESP32-S3 CYD (ES3C28P): ILI9341V (CONFIG_POCKET_TANK_DISPLAY_ILI9341)
  *   - the Waveshare ESP32-S3-Touch-LCD-2: ST7789T3 (CONFIG_POCKET_TANK_DISPLAY_ST7789)
+ *   - (this fork, 2026-10-17) the Waveshare ESP32-S3-Touch-LCD-1.69: ST7789V2
+ *     (CONFIG_POCKET_TANK_DISPLAY_ST7789 too), a 240x280 glass in the same
+ *     240x320 frame, scanned as landscape 280x240 behind a 20 px gap
+ *     (board_pins.h LCD_GAP_X)
  * The pins and the bench facts of how each glass is mounted (LCD_SWAP_XY,
  * LCD_MIRROR_*, LCD_BGR, LCD_INVERT, LCD_PCLK_HZ) live in board_pins.h.
  *
@@ -39,7 +43,7 @@ static const char *TAG = "ili9341";
 #include <string.h>
 
 #define LCD_HOST    SPI2_HOST
-#define STRIPE_ROWS 20                          /* tank rows per DMA transfer: 320 x 20 x 2 = 12.8 KB */
+#define STRIPE_ROWS 20                          /* tank rows per DMA transfer: TANK_W x 20 x 2 = 12.8 KB at 320, 11.2 KB at 280 (this fork, 2026-10-17) */
 
 #define BL_TIMER   LEDC_TIMER_0
 #define BL_CHANNEL LEDC_CHANNEL_0
@@ -92,7 +96,7 @@ bool display_port_init(void) {
         if (i2c_master_probe(s_i2c, address, 20) == ESP_OK) ESP_LOGI(TAG, "i2c: device at 0x%02X", address);
 
     backlight_init();                               /* dark until the first frame is in */
-#if CONFIG_POCKET_TANK_WST_320X240
+#if CONFIG_POCKET_TANK_WST_320X240   /* (this fork, 2026-10-17) never the Touch-LCD-1.69: its GPIO41 is left alone in phase 1 (board_pins.h) */
     /* the TF card shares the LCD's SPI lines: hold its select high so the
        card never answers a panel transfer. (this fork, 2026-10-08) Through
        gpio_config, as every other output in the tree: gpio_set_direction
@@ -123,10 +127,20 @@ bool display_port_init(void) {
     const esp_lcd_panel_dev_config_t pcfg = { .reset_gpio_num = PIN_LCD_RST,
         .rgb_ele_order = LCD_BGR ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB, .bits_per_pixel = 16 };
     ESP_ERROR_CHECK(new_panel(io, &pcfg, &s_panel));
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));  /* no reset pin (-1): the driver sends the software reset */
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));  /* PIN_LCD_RST -1 (CYD, Touch-LCD-2): the driver sends the software reset;
+                                                       (this fork, 2026-10-17) the Touch-LCD-1.69's GPIO8: a hardware reset pulse */
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
     esp_lcd_panel_invert_color(s_panel, LCD_INVERT);
     apply_orientation();
+#ifdef LCD_GAP_X
+    /* (this fork, 2026-10-17) The Touch-LCD-1.69: the 240x280 glass sits 20
+       rows into the controller's 320, and with MV on those rows are the
+       landscape x - so every frame is drawn LCD_GAP_X columns in. The gap
+       is kept by esp_lcd across later swap / mirror calls. A 180-degree turn
+       (s_inverted) keeps it at 20, since 320 - 280 - 20 = 20. If the bench
+       shows otherwise, recompute it in apply_orientation from s_inverted. */
+    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(s_panel, LCD_GAP_X, LCD_GAP_Y));
+#endif
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
     backlight_set(s_brightness);
     ESP_LOGI(TAG, "panel up: %dx%d landscape at %d MHz", TANK_W, TANK_H, LCD_PCLK_HZ / 1000000);

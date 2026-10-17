@@ -272,8 +272,12 @@ static bool ft6336_init(void) {
     ESP_LOGI(TAG, "FT6336 ready");
     return true;
 }
-#elif CONFIG_POCKET_TANK_WST_320X240
-/* The Touch-LCD-2's CST816D (the CST816S driver's register set, as on the
+#elif CONFIG_POCKET_TANK_WST_320X240 || CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-17) The Touch-LCD-1.69's CST816T takes this branch too:
+ * the same register set at the same address, and its reset (PIN_TP_RST,
+ * GPIO13) goes to the driver, which pulses it. PANEL_H is 280 there; the
+ * mapping below is the starting value for its bench (Task 6).
+ * The Touch-LCD-2's CST816D (the CST816S driver's register set, as on the
  * AMOLED's V2 board) on the shared bus, reporting in the panel's portrait
  * frame. The driver mirrors first, then swaps: x = raw y, y = 239 - raw x,
  * which is Waveshare's factory app's own mapping for the landscape it scans
@@ -301,7 +305,7 @@ static bool cst816d_init(void) {
 bool touch_port_init(void) {
 #if CONFIG_POCKET_TANK_CYD_320X240
     return ft6336_init();
-#elif CONFIG_POCKET_TANK_WST_320X240
+#elif CONFIG_POCKET_TANK_WST_320X240 || CONFIG_POCKET_TANK_WST169
     return cst816d_init();
 #endif
     if (board_is_round() || board_is_square()) return cst9217_init();
@@ -803,8 +807,9 @@ void touch_port_show_battery(bool on) { s_bat = on; if (on) { s_bat_us = esp_tim
 /* ---- the dark (touch_port.h; main.c's enter_dark) ---- */
 bool touch_port_finger_now(void) {
     if (!s_tp) return false;
-#if CONFIG_POCKET_TANK_WST_320X240
-    /* (this fork, 2026-10-08) The Touch-LCD-2's CST816D may stop answering
+#if CONFIG_POCKET_TANK_WST_320X240 || CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-17: the Touch-LCD-1.69's CST816T, the same family,
+       too) (this fork, 2026-10-08) The Touch-LCD-2's CST816D may stop answering
        I2C while it idles: the CST816 family has an auto-sleep a few seconds
        after the last finger, woken by a touch - unseen on this chip, since
        nobody here has the board. A read it does not answer is no finger,
@@ -841,7 +846,9 @@ void touch_port_swallow(void) { s_swallow = true; }
  * only reads it, with a pull-up towards the level the touch INT idles at -
  * nothing here drives it. Any GPIO can wake the S3 from light sleep, an
  * RTC pin or not (gpio_wakeup_enable), so GPIO46, which is not one, is
- * armed as the CYD's GPIO17 is. */
+ * armed as the CYD's GPIO17 is.
+ * (this fork, 2026-10-17) The Touch-LCD-1.69: the CST816T's INT on GPIO14,
+ * not a strapping pin; unseen on the bench yet, armed the same way. */
 int touch_port_wake_gpio(void) {
     static bool configured;
     if (!s_tp) return -1;

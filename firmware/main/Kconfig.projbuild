@@ -38,9 +38,13 @@ menu "pocket-tank"
         depends on POCKET_TANK_CYD_320X240
         default n
     config POCKET_TANK_DISPLAY_ST7789
-        bool "Drive the Touch-LCD-2's ST7789T3 over SPI, backlight PWM"
-        depends on POCKET_TANK_WST_320X240
+        bool "Drive the Touch-LCD-2's ST7789T3 or the Touch-LCD-1.69's ST7789V2 over SPI, backlight PWM"
+        depends on POCKET_TANK_WST_320X240 || POCKET_TANK_WST169
         default n
+        help
+            (this fork, 2026-10-17) The Touch-LCD-1.69 joined: the same
+            controller family, 240x280 glass in a 240x320 frame
+            (board_pins.h LCD_GAP_X).
     config POCKET_TANK_DISPLAY_SH8601
         bool "Drive the Waveshare 1.8in AMOLED (SH8601 / CO5300 over QSPI)"
         default n
@@ -82,12 +86,14 @@ menu "pocket-tank"
     config POCKET_TANK_AUDIO_ES8311
         bool "Play the sound bank through the ES8311 codec + NS4150B amp (I2S)"
         default n
-        depends on !POCKET_TANK_WST_320X240
+        depends on !POCKET_TANK_WST_320X240 && !POCKET_TANK_WST169
         help
             Enable for the real board (docs/AUDIO.md). Off = stub audio port: cues compile, nothing plays.
             (this fork, 2026-10-08) Not offered on the Touch-LCD-2, which has
             no codec: the port would drive the AMOLED's I2S pins there, and
             its word select, GPIO45, is that board's LCD chip select.
+            (this fork, 2026-10-17) Nor on the Touch-LCD-1.69: no codec
+            either, only a passive buzzer, which phase 1 leaves alone.
     config POCKET_TANK_IMU_QMI8658
         bool "Look for a QMI8658 IMU (I2C 0x6B / 0x6A)"
         default y

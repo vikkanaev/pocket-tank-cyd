@@ -17,7 +17,22 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 KEY=firmware/keys/ota_signing_key.pem
-. ~/esp/esp-idf/export.sh > /dev/null 2>&1 || { echo "ota_key: ESP-IDF export failed"; exit 1; }
+# (this fork, 2026-10-17) $IDF_PATH first, then ~/esp/esp-idf as before, then
+# ~/esp/v5.5.2/esp-idf: the Mac the Touch-LCD-1.69 is built on has only the
+# last, and tools/build_wst169.sh calls this script when the key is missing.
+if [ -n "${IDF_PATH:-}" ]; then IDF=$IDF_PATH
+elif [ -f ~/esp/esp-idf/export.sh ]; then IDF=~/esp/esp-idf
+else IDF=~/esp/v5.5.2/esp-idf; fi
+# (this fork, 2026-10-17) export.sh names the Python env after the first
+# python3 on PATH (3.13 on Viktor's Mac), but the one installed is py3.9's:
+# point it there when nothing else says which, and that env exists.
+PYENV_DIR=$HOME/.espressif/python_env/idf5.5_py3.9_env
+if [ -z "${IDF_PYTHON_ENV_PATH:-}" ] && [ -d "$PYENV_DIR" ]; then export IDF_PYTHON_ENV_PATH=$PYENV_DIR; fi
+# export.sh is not written for set -eu (v5.5.2 stops in it, silently): source
+# it with both off.
+set +eu
+. "$IDF/export.sh" > /dev/null 2>&1 || { echo "ota_key: ESP-IDF export failed ($IDF)"; exit 1; }
+set -eu
 if [[ "${1:-}" == "--pub" ]]; then
   [ -f "$KEY" ] || { echo "ota_key: no $KEY"; exit 1; }
   T=$(mktemp); espsecure.py digest_sbv2_public_key --keyfile "$KEY" --output "$T" > /dev/null; xxd -p "$T" | tr -d "\n"; echo; rm -f "$T"

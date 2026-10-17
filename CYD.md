@@ -873,6 +873,46 @@ named the board `CONFIG_POCKET_TANK_BOARD_TLCD2`, keeps its board:
 `firmware/main/sdkconfig.rename` carries the old name across (and the
 CYD's old `CONFIG_POCKET_TANK_BOARD_CYD_320X240` the same way).
 
+## The Waveshare ESP32-S3-Touch-LCD-1.69
+
+(2026-10-17) The third board of the family, the
+[ESP32-S3-Touch-LCD-1.69](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.69):
+an ESP32-S3R8 (16 MB flash, 8 MB octal PSRAM) behind a 1.69-inch ST7789V2
+IPS panel, 240 x 280 with rounded corners, with a CST816T touch panel (its
+own reset, GPIO13), a QMI8658 IMU, a PCF85063 RTC and a passive buzzer.
+`CONFIG_POCKET_TANK_WST169` selects `CONFIG_POCKET_TANK_320X240`, so it is
+the Touch-LCD-2 in nearly everything - the shared SPI display port, the
+CST816 touch branch, the dark - but its tank is **280 x 240** (`TANK_W`
+280; the pages are laid out for it in `common/render.h`) and its image is
+named `wst169`. The 280-wide glass sits 20 rows into the ST7789's 320, so
+the port draws behind a 20 px gap (`LCD_GAP_X` in `board_pins.h`). The
+simulator's world for it is `fishsim-280x240`.
+
+**Building and flashing.** From the repository root, on macOS or Linux:
+
+```sh
+tools/build_wst169.sh                         # build into firmware/build_wst169/
+tools/build_wst169.sh flash                   # ... and flash the one /dev/cu.usbmodem*
+tools/build_wst169.sh /dev/cu.usbmodem101 flash --model   # a named port, and the model the first time
+tools/build_wst169.sh monitor                 # build, flash, then the serial console
+```
+
+The script sources `${IDF_PATH:-$HOME/esp/v5.5.2/esp-idf}/export.sh`,
+creates the signing key with `tools/ota_key.sh` if this disk has none,
+reconfigures every time (the build id is the commit's) and flashes only
+after a build that succeeded. Back the factory image up first, as for the
+other boards.
+
+**Phase 1 limits.** It runs over USB. The firmware configures none of
+GPIO 33, 35, 36, 40, 41 and 42 - the power latch (SYS_EN), the PWR key and
+the buzzer on one revision of the board or the other, and which revision
+this one is is not settled - so on battery it cannot hold its own power,
+the PWR key does nothing, there is no sound and no battery pill. The RTC
+is not read (the clock is the system time), the IMU does not turn the
+picture (`IMU_AUTO_FLIP=n`; the SCREEN row does), OTA is off as on every
+320 x 240 board, and the panel's mirrors, colours, 40 MHz clock, gap and the
+touch mapping are starting values for the bench.
+
 ## Syncing with upstream
 
 The fork takes upstream's releases by merging them; it never sends anything
