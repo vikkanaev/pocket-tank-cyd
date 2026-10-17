@@ -4,7 +4,9 @@
 Runs one picture-writing mode of the simulator on each board's build and
 pastes the pictures of the same name into one PNG per name: the rectangle
 (the 1.8), the bowl (the 1.75C) and the watch (the 2.06), each cut to the
-shape of its glass, so what the bezel hides is hidden here too. Look at the
+shape of its glass, so what the bezel hides is hidden here too (this fork,
+2026-10-17: and the small boards - the 320 x 240 glass of the CYD and the
+Touch-LCD-2, and the 1.69's 280 x 240 with its rounded corners). Look at the
 sheets before anything is flashed (docs/BOARDS.md): a page that is right on
 one board and cut, shifted or crowded on another shows at a glance.
 
@@ -14,7 +16,7 @@ one board and cut, shifted or crowded on another shows at a glance.
 
 The mode is any simulator flag that takes a path prefix as its next argument
 and writes <prefix>_<name>.ppm files; anything after it is passed on. The
-three simulators must be built (`make`, `make ROUND=1`, `make WATCH=1` in
+simulators must be built (`make`, `make ROUND=1`, `make WATCH=1`, ... in
 sim/, or `make check-all`). Sheets land in sim/sheets/ (not tracked) unless
 --out says otherwise. No dependencies beyond the standard library.
 """
@@ -28,7 +30,11 @@ import zlib
 
 SIM = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sim"))
 # the board, its simulator, the corner radius of its glass (None = a circle)
-BOARDS = [("1.8", "fishsim", 40), ("1.75C", "fishsim-round", None), ("2.06", "fishsim-watch", 100), ("2.16", "fishsim-square", 40)]
+# (this fork, 2026-10-17) the small boards: the 320x240 glass (CYD / Touch-LCD-2) has square
+# corners, radius 0 (None would mask it as the bowl's circle); the 1.69's 20 is a guess until the
+# glass is measured.
+BOARDS = [("1.8", "fishsim", 40), ("1.75C", "fishsim-round", None), ("2.06", "fishsim-watch", 100), ("2.16", "fishsim-square", 40),
+          ("320x240", "fishsim-320x240", 0), ("1.69", "fishsim-280x240", 20)]
 GAP, BACK, OFF = 16, (30, 30, 30), (70, 0, 70)     # between glasses; the sheet; what the bezel hides
 
 
