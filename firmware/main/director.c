@@ -198,7 +198,7 @@ static void help(void) {
     ESP_LOGI(TAG, "touch [bias <px>] [log on|off] [lift <ms>] [said on|off] (finger-landing correction: reported touches move up by px; not saved; also the raw span seen since boot)");
     ESP_LOGI(TAG, "charge [mA] (the charger live: state, VBUS, die temperature; a current tried until the next boot) | pmic (AXP2101 dump) | pmic on|off <aldo1|aldo2..4|bldo1|bldo2|cpusldo|dcdc2..5|dldo1|dldo2> (experiments; boot trims the unused ones) | pmic trim");
     ESP_LOGI(TAG, "bright <0-255> (panel now; not saved) | level 100|60|30 (the keeper's setting, saved)");
-    ESP_LOGI(TAG, "batlog [clear] (the tank's own battery log: SoC/VBAT every 5 min awake, 30 min asleep, mA derived - read it after a night on battery) | codec (ES8311 registers) | clock (the clock: RTC chip or the internet's time, and whether tonight is a power-off) | sleepcfg [mask] (the round board's deep-sleep savings: 1 touch, 2 panel, 4 IMU, 8 QSPI held; 15 = all, the default) | deepsleep [N] (N: 5 s grace then deep sleep with an N s timer wake - one batlog window per N, BOOT wakes it; no N: the keeper's sleep, grace then power-off) | poweroff (save + PMIC cut now) | keytime [N] (N s of timing every PWR press - is a tap under the PMIC's 128 ms power-on hold?)");
+    ESP_LOGI(TAG, "batlog [clear] (the tank's own battery log: SoC/VBAT every 5 min awake, 30 min asleep, mA derived - read it after a night on battery) | codec (ES8311 registers) | clock (the clock: RTC chip or the internet's time, and whether tonight is a power-off) | sleepcfg [mask] (the round board's deep-sleep savings: 1 touch, 2 panel, 4 IMU, 8 QSPI held; 15 = all, the default) | deepsleep [N] (N: 5 s grace then deep sleep with an N s timer wake - one batlog window per N, BOOT wakes it; no N: the keeper's sleep, grace then power-off) | poweroff (save + PMIC cut now) | keytime [N] (N s of timing every PWR press - is a tap under the PMIC's 128 ms power-on hold?) | pwrkey [N] (the WST169's PWR key, GPIO 40: rest level and each change for N s, default 10)");
     ESP_LOGI(TAG, "overgrown (grass to the ceiling + fouled glass; fish stress climbs) | court (stage the fry: in ~10-20 s the pair courts in the grass, then it is born) | arrive (the fry, now)");
     ESP_LOGI(TAG, "wifi (the saved network) | wifi set ssid=<name> pass=<secret> | wifi forget | ota (slots, channel) | ota check (save + restart into update mode, as CHECK FOR UPDATES) | ota url <manifest url>|default (the test channel)");
 }
@@ -446,6 +446,23 @@ static void run(tank_t *t, char *line) {
         }
         while (battery_port_key_poll()) { }
         ESP_LOGI(TAG, "pwrpin: over, %d changes, reads %d", changes, last);
+    } else if (!strcmp(c, "pwrkey")) {               /* (this fork, 2026-10-17) the WST169's PWR key (GPIO 40): its rest level and each change, for N s */
+#if CONFIG_POCKET_TANK_WST169
+        int n = argc > 1 ? atoi(argv[1]) : 10; if (n < 1) n = 1; if (n > 60) n = 60;
+        gpio_config_t in = { .pin_bit_mask = 1ULL << PIN_PWR_KEY, .mode = GPIO_MODE_INPUT,
+                             .pull_up_en = GPIO_PULLUP_DISABLE, .pull_down_en = GPIO_PULLDOWN_DISABLE };
+        gpio_config(&in);                                /* no pulls: the board's own pull sets the rest level */
+        int last = gpio_get_level(PIN_PWR_KEY), changes = 0; int64_t t0 = esp_timer_get_time(), tl = t0;
+        ESP_LOGI(TAG, "pwrkey: GPIO %d reads %d at rest (active level assumed %d) - press the PWR key in the next %d s", PIN_PWR_KEY, last, PWR_KEY_ACTIVE_LEVEL, n);
+        while (esp_timer_get_time() - t0 < (int64_t)n * 1000000) {
+            int v = gpio_get_level(PIN_PWR_KEY); int64_t now = esp_timer_get_time();
+            if (v != last) { ESP_LOGI(TAG, "pwrkey: %d -> %d after %d ms (t %d ms)", last, v, (int)((now - tl) / 1000), (int)((now - t0) / 1000)); last = v; tl = now; changes++; }
+            vTaskDelay(pdMS_TO_TICKS(2));
+        }
+        ESP_LOGI(TAG, "pwrkey: over, %d changes, reads %d", changes, last);
+#else
+        ESP_LOGI(TAG, "pwrkey: no PWR key line on this board");
+#endif
     } else if (!strcmp(c, "poweroff")) {
 #if !CONFIG_POCKET_TANK_SLEEP_NONE && !CONFIG_POCKET_TANK_SLEEP_SCREEN && !CONFIG_POCKET_TANK_SLEEP_LIGHT
         ESP_LOGI(TAG, "power-off now (the PWR key or USB boots it) - the USB port vanishes");

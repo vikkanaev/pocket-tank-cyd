@@ -1,5 +1,5 @@
 set(SRCS main.c director.c brightness.c orientation.c sleep_setting.c batlog.c codec_port.c advisor_llm_esp.c battery_port_axp2101.c imu_port.c
-         update_mode.c net_port_esp.c model_trailer.c)
+         update_mode.c net_port_esp.c model_trailer.c board_power.c)
 if(CONFIG_POCKET_TANK_DISPLAY_SH8601)
     list(APPEND SRCS display_port_sh8601.c)
 elseif(CONFIG_POCKET_TANK_DISPLAY_ILI9341 OR CONFIG_POCKET_TANK_DISPLAY_ST7789)

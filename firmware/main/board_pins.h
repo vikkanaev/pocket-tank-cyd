@@ -140,13 +140,13 @@
  * its own reset line; a QMI8658 IMU at 0x6B and a PCF85063 RTC at 0x51 on
  * the same bus. No codec, no PMIC, no TF card.
  *
- * Phase 1 (over USB) deliberately configures none of GPIO 33, 35, 36, 40, 41
- * and 42: across the two board revisions they are the power latch (SYS_EN),
- * the PWR key sense (SYS_OUT) and the passive buzzer. Which revision is on
- * the desk is not settled yet, and from USB none of them is needed: drive
- * the wrong one and the board could cut its own power on battery, or the
- * buzzer could sound. So no SYS_EN, PWR, buzzer or battery ADC is named
- * here, and nothing below lands on those pins. */
+ * Board revision: NEW (the model name printed on the board; checked on the
+ * desk 2026-10-17). Phase 2 (battery) uses GPIO 40, 41, 42 and 1: the power
+ * latch (SYS_EN, 41), the PWR key sense (40), the passive buzzer (42) and the
+ * battery divider into ADC1_CH0 (1). GPIO 33-37 are the octal PSRAM and are
+ * never configured; GPIO 35/36 are not touched at all. GPIO41's IO_MUX
+ * function 0 is JTAG MTDI, so it is set up with gpio_config, never
+ * gpio_set_direction alone (board_power.c). */
 #define PIN_LCD_CS        5
 #define PIN_LCD_DC        4        /* high = data, low = command */
 #define PIN_LCD_SCLK      6
@@ -171,6 +171,11 @@
 #define PIN_I2C_SDA       11       /* shared: touch, IMU, RTC */
 #define PIN_I2C_SCL       10
 #define PIN_TP_RST        13       /* low = reset; the CST816T driver pulses it */
+#define PIN_SYS_EN        41       /* high = the battery stays connected to the board; low = power off (board_power.c) */
+#define PIN_PWR_KEY       40       /* the PWR key sense (SYS_OUT) */
+#define PWR_KEY_ACTIVE_LEVEL 0     /* expected: low while down - unconfirmed until the bench (director `pwrkey`) */
+#define PIN_BUZZER        42       /* passive buzzer: held low, so it is silent */
+#define PIN_BAT_ADC       1        /* ADC1_CH0, VBAT / 3 */
 #define PIN_TP_INT        14       /* the CST816T's INT, active low; the port polls, the dark arms it as a wake */
 #define I2C_ADDR_CST816D  0x15     /* the CST816T answers where the Touch-LCD-2's CST816D does */
 #define PIN_IMU_INT1      38       /* QMI8658 at 0x6B, unused (the port polls) */
@@ -181,8 +186,10 @@
  *  - the LCD's reset (GPIO8, driven high) and the touch reset (GPIO13,
  *    driven high): unlike the Touch-LCD-2's shared, pulled-up net these are
  *    GPIOs, and an isolated, floating reset could reset the panel or the
- *    CST816T in a slice, as a floating FT6336 reset could on the CYD. */
-#define BOARD_DARK_HELD_PINS PIN_LCD_BL, PIN_LCD_RST, PIN_TP_RST
+ *    CST816T in a slice, as a floating FT6336 reset could on the CYD;
+ *  - SYS_EN (GPIO41, high) and the buzzer (GPIO42, low): a slice must not
+ *    drop the latch (the board would cut its own power) or sound the buzzer. */
+#define BOARD_DARK_HELD_PINS PIN_LCD_BL, PIN_LCD_RST, PIN_TP_RST, PIN_SYS_EN, PIN_BUZZER
 #else
 #define PIN_LCD_CS        12
 #define PIN_LCD_PCLK      11

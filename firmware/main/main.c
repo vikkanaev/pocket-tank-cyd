@@ -44,6 +44,7 @@
 #include "tank_events.h"
 #include "setup.h"
 #include "nvs_flash.h"
+#include "board_power.h"
 #include "nvs.h"
 #include "esp_app_desc.h"
 #include "version.h"
@@ -1191,6 +1192,9 @@ void device_provision_request(void) {
 }
 
 void app_main(void) {
+#if CONFIG_POCKET_TANK_WST169
+    board_power_latch();                     /* (this fork, 2026-10-17) first of all: SYS_EN high, or the battery drops the board */
+#endif
     ESP_LOGI(TAG, "pocket-tank v%s %s (build %s) for %s boot%s", PT_RELEASE, PT_RELEASE_STAGE, version_port_string(), PT_BOARD,
              esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0 || esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1 ? " (woken by button)" : "");
     gpio_config_t btn = { .pin_bit_mask = 1ULL << BTN_SLEEP, .mode = GPIO_MODE_INPUT,
