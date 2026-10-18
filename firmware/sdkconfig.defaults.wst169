@@ -3,10 +3,12 @@
 # and 8 MB octal PSRAM - with a 1.69" ST7789V2 IPS (240 x 280 with rounded
 # corners, scanned landscape 280 x 240), a CST816T touch panel with its own
 # reset line, a QMI8658 IMU, a PCF85063 RTC and a passive buzzer. No codec,
-# no PMIC: the audio port is the stub and the battery meter stays hidden (no
-# AXP2101 answers); the RTC is read at boot as on every board. Phase 1 runs over USB
-# and leaves the power latch (SYS_EN), the PWR key and the buzzer alone
-# (board_pins.h says why).
+# no PMIC: the audio port is the stub; the RTC is read at boot as on every
+# board. Phase 2 (battery): the meter reads VBAT through the ADC
+# (battery_port_adc.c, GPIO 1), app_main latches SYS_EN (GPIO 41) first of
+# all, the PWR key (GPIO 40) sleeps on a short press and powers off on a
+# 1.5 s hold, and the buzzer (GPIO 42) is held low (board_pins.h,
+# board_power.c).
 #
 #   tools/build_wst169.sh            # build into build_wst169/
 #   idf.py -B build_wst169 -D SDKCONFIG=build_wst169/sdkconfig \

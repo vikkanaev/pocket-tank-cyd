@@ -111,7 +111,12 @@ PWR switch, i.e. the ETA6098 output, so on the cable "no battery" looks like
 - The battery meter shows the charge.
 - Not checked yet: charging from a wall charger, an overnight run (RTC
   catch-up), the low-voltage cutoff, the dark-mode current, wake by touch and
-  by BOOT individually.
+  by BOOT individually, SLEEP=NEVER with the PWR key, a ghost-free dark over
+  USB, a 15 s PWR hold on battery, and `crash panic` on battery (Handoff.md
+  has the checklist).
+- The dark: in light sleep the firmware writes the CST816T 0xFE = 0 (the chip
+  dozes with the board), and 0xFE = 1 at the wake. Whether a dozing chip still
+  pulses INT on a touch is a battery-bench question.
 
 ### Found on the bench and fixed
 
@@ -123,4 +128,15 @@ PWR switch, i.e. the ETA6098 output, so on the cable "no battery" looks like
   corner 279,239 as a 0 ms tap, which closed cards and pages. Off-panel points
   (x >= PANEL_H or y >= PANEL_W) are now dropped under WST169. Verified: the
   card lasted the full 30 s; the drops are logged.
-- Deferred: the drop log line is per report; rate-limit it.
+- 8ad2cf3: the drop log is rate-limited: one line a minute with the count.
+- After the final review (2026-10-18):
+  - the dark's touch probe (`touch_port_finger_now`) drops the same off-panel
+    reports, so a ghost cannot light the screen from the dark;
+  - a power-off decides "still powered, so USB" only after the PWR key is
+    released and the board stays up 1 s more (a 15 s hold on battery used to
+    end in a latched dark); a key held 60 s is taken as stuck and SYS_EN stays
+    low;
+  - the boot's low-voltage check runs before `display_port_init`, so a flat
+    cell never lights the backlight;
+  - the director's `crash restart|panic [N]` (WST169 only) checks that SYS_EN's
+    pad hold survives a software reset on battery.
