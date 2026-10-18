@@ -68,6 +68,11 @@ static bool s_wake_due;                           /* ... a 0xFE = 1 the dozing c
 static bool cst_write_fe(uint8_t v);
 #endif
 #define BATTERY_PAGE_US (30LL * 1000000)
+#if CONFIG_POCKET_TANK_WST169
+#define CARD_UP_US (30LL * 1000000)                /* (this fork, 2026-10-18) the 1.69's small text takes longer to read */
+#else
+#define CARD_UP_US (10LL * 1000000)
+#endif
 #define CONFIRM_TIMEOUT_US (20LL * 1000000)
 static bool s_inverted;                           /* screen 180-flipped: mirror into tank space */
 /* Fingers land a little BELOW where the eye aims - the pad rolls onto the
@@ -783,7 +788,8 @@ void touch_port_poll(tank_t *t) {
                 float d2 = d2a < d2b ? d2a : d2b;
                 if (d2 < bd) { bd = d2; best = i; }
             }
-            if (best >= 0) { s_sel = (best == s_sel) ? -1 : best; s_sel_us = now; }
+            if (best >= 0) { s_sel = (best == s_sel) ? -1 : best; s_sel_us = now;
+                ESP_LOGI(TAG, "fish %d tapped at %.0f,%.0f: card %s", best, s_px, s_py, s_sel >= 0 ? "up" : "down"); }
             else if (tank_snail_hit(t, s_px, s_py)) {   /* the snail: its card (2026-09-16), the fish first */
                 s_sel = s_sel == RENDER_CARD_SNAIL ? -1 : RENDER_CARD_SNAIL; s_sel_us = now;
                 ESP_LOGI(TAG, "snail tapped: card %s (%d spots grazed)", s_sel >= 0 ? "up" : "down", (int)t->snail_grazed); }
@@ -796,7 +802,7 @@ void touch_port_poll(tank_t *t) {
                 else if (taps >= 3) s_sel = -1;
                 ESP_LOGI(TAG, "shrimp tapped (%d): card %s | %d shrimp, %d eaten, %d/%d to the next", taps, s_sel == RENDER_CARD_SHRIMP ? "up" : "down",
                          t->shrimp_n, (int)t->shrimp_eaten, t->shrimp_food, SHRIMP_PER_JOIN); }
-            else if (s_sel >= 0) s_sel = -1;   /* card up: a tap on empty glass just
+            else if (s_sel >= 0) { s_sel = -1; ESP_LOGI(TAG, "tap at %.0f,%.0f (held %d ms): card down", s_px, s_py, (int)(held_us / 1000)); }   /* card up: a tap on empty glass just
                                                   dismisses it - it is NOT a tank tap
                                                   (no feed, no light-toggle burst) */
             else tank_touch_tap(t, s_px, s_py);
@@ -810,7 +816,7 @@ released:
     if (!touched) s_held_page = false;
     s_down = touched;
     if (s_sel >= t->n_fish && s_sel != RENDER_CARD_SNAIL && s_sel != RENDER_CARD_SHRIMP && s_sel != RENDER_CARD_URCHIN) s_sel = -1;   /* fresh tank / save load */
-    if (s_sel >= 0 && now - s_sel_us > 10 * 1000000) s_sel = -1; /* auto-dismiss */
+    if (s_sel >= 0 && now - s_sel_us > CARD_UP_US) { s_sel = -1; ESP_LOGI(TAG, "card down: timed out"); } /* auto-dismiss */
     if (s_bat && now - s_bat_us > BATTERY_PAGE_US) s_bat = false; /* the battery page too, after a while */
 }
 
