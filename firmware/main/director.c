@@ -199,6 +199,9 @@ static void help(void) {
     ESP_LOGI(TAG, "charge [mA] (the charger live: state, VBUS, die temperature; a current tried until the next boot) | pmic (AXP2101 dump) | pmic on|off <aldo1|aldo2..4|bldo1|bldo2|cpusldo|dcdc2..5|dldo1|dldo2> (experiments; boot trims the unused ones) | pmic trim");
     ESP_LOGI(TAG, "bright <0-255> (panel now; not saved) | level 100|60|30 (the keeper's setting, saved)");
     ESP_LOGI(TAG, "batlog [clear] (the tank's own battery log: SoC/VBAT every 5 min awake, 30 min asleep, mA derived - read it after a night on battery) | codec (ES8311 registers) | clock (the clock: RTC chip or the internet's time, and whether tonight is a power-off) | sleepcfg [mask] (the round board's deep-sleep savings: 1 touch, 2 panel, 4 IMU, 8 QSPI held; 15 = all, the default) | deepsleep [N] (N: 5 s grace then deep sleep with an N s timer wake - one batlog window per N, BOOT wakes it; no N: the keeper's sleep, grace then power-off) | poweroff (save + PMIC cut now) | keytime [N] (N s of timing every PWR press - is a tap under the PMIC's 128 ms power-on hold?) | pwrkey [N] (the WST169's PWR key, GPIO 40: rest level and each change for N s, default 10)");
+#if CONFIG_POCKET_TANK_WST169
+    ESP_LOGI(TAG, "crash restart|panic [N] (the WST169 bench: esp_restart() or abort() after N s, default 0, no save - pull the cable in the N s - on battery SYS_EN's hold must keep the board on through the reset)");
+#endif
     ESP_LOGI(TAG, "overgrown (grass to the ceiling + fouled glass; fish stress climbs) | court (stage the fry: in ~10-20 s the pair courts in the grass, then it is born) | arrive (the fry, now)");
     ESP_LOGI(TAG, "wifi (the saved network) | wifi set ssid=<name> pass=<secret> | wifi forget | ota (slots, channel) | ota check (save + restart into update mode, as CHECK FOR UPDATES) | ota url <manifest url>|default (the test channel)");
 }
@@ -462,6 +465,24 @@ static void run(tank_t *t, char *line) {
         ESP_LOGI(TAG, "pwrkey: over, %d changes, reads %d", changes, last);
 #else
         ESP_LOGI(TAG, "pwrkey: no PWR key line on this board");
+#endif
+#if CONFIG_POCKET_TANK_WST169
+    } else if (!strcmp(c, "crash") && argc > 1 && (!strcmp(argv[1], "restart") || !strcmp(argv[1], "panic"))) {
+        /* (this fork, 2026-10-18) the bench's check of the spec's clarification
+           3: SYS_EN's pad hold (board_power_latch) must survive a software
+           reset, or every crash on the battery is a power-off with nothing
+           saved. No save first, on purpose: a real crash does not save
+           either. On battery the board must come back up, not go dark for
+           good; the boot's ROM line says rst:0xc (RTC_SW_CPU_RST, restart)
+           or the panic's own reason. The console is the USB port, whose
+           cable powers the board: `crash panic 15` waits 15 s (at most 60)
+           for the cable to come out, so the crash happens on the battery. */
+        int n = argc > 2 ? atoi(argv[2]) : 0; if (n < 0) n = 0; if (n > 60) n = 60;
+        ESP_LOGW(TAG, "crash %s: no save, %s in %d s - on battery the board must reboot, not power off", argv[1],
+                 !strcmp(argv[1], "panic") ? "abort()" : "esp_restart()", n);
+        vTaskDelay(pdMS_TO_TICKS(50 + 1000 * n));        /* the line out first; then the cable's time */
+        if (!strcmp(argv[1], "panic")) abort();
+        esp_restart();
 #endif
     } else if (!strcmp(c, "poweroff")) {
 #if !CONFIG_POCKET_TANK_SLEEP_NONE && !CONFIG_POCKET_TANK_SLEEP_SCREEN && !CONFIG_POCKET_TANK_SLEEP_LIGHT
