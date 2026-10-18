@@ -280,7 +280,12 @@ static bool panel_read(uint16_t *x, uint16_t *y) {
        off the glass, map_touch pinned it to the corner (279,239), and the
        0 ms "tap" closed a fish's card. A finger is on the panel: after the
        driver's mirror and swap, x < PANEL_H and y < PANEL_W */
-    if (*x >= PANEL_H || *y >= PANEL_W) { ESP_LOGI(TAG, "off-panel report %u,%u dropped", *x, *y); return false; }
+    if (*x >= PANEL_H || *y >= PANEL_W) {
+        static int dropped; static int64_t said_us;
+        int64_t t = esp_timer_get_time(); dropped++;
+        if (t - said_us > 60LL * 1000000) { ESP_LOGI(TAG, "off-panel reports dropped: %d in the last minute (last %u,%u)", dropped, *x, *y); dropped = 0; said_us = t; }
+        return false;
+    }
 #endif
     s_seen_us = esp_timer_get_time();
     return true;
