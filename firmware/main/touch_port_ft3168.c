@@ -74,6 +74,13 @@ static bool cst_write_fe(uint8_t v);
 #define CARD_UP_US (10LL * 1000000)
 #endif
 #define CONFIRM_TIMEOUT_US (20LL * 1000000)
+#if CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-18) why a card closed (the ghost-tap hunt): the 1.69
+   only, so the other boards' logs stay as they were */
+#define CARD_LOGI(...) ESP_LOGI(TAG, __VA_ARGS__)
+#else
+#define CARD_LOGI(...) ((void)0)
+#endif
 static bool s_inverted;                           /* screen 180-flipped: mirror into tank space */
 /* Fingers land a little BELOW where the eye aims - the pad rolls onto the
  * glass under the fingertip (phones shift their hit targets down for the
@@ -246,6 +253,21 @@ static bool ft3168_read(uint16_t *x, uint16_t *y) {
     *x = lx; *y = ly;
     return down;
 }
+#if CONFIG_POCKET_TANK_WST169
+/* (this fork, 2026-10-18) A CST816T report off the panel - all ones (raw
+   0xFFF) by the look, 4095,61680 after the driver's mirror and swap - is no
+   finger. A finger is on the panel: x < PANEL_H and y < PANEL_W after the
+   mirror and swap. True when the report is dropped; the drops are logged
+   once a minute with a count. Both reads use it: panel_read (the tank) and
+   touch_port_finger_now (the dark, where a ghost would light the screen). */
+static bool off_panel_drop(uint16_t x, uint16_t y) {
+    if (x < PANEL_H && y < PANEL_W) return false;
+    static int dropped; static int64_t said_us;
+    int64_t t = esp_timer_get_time(); dropped++;
+    if (t - said_us > 60LL * 1000000) { ESP_LOGI(TAG, "off-panel reports dropped: %d in the last minute (last %u,%u)", dropped, x, y); dropped = 0; said_us = t; }
+    return true;
+}
+#endif
 /* one read of the glass, whichever chip: true while a finger is down, in panel px */
 static bool panel_read(uint16_t *x, uint16_t *y) {
     if (s_cst) return cst9217_read(x, y);
@@ -280,12 +302,7 @@ static bool panel_read(uint16_t *x, uint16_t *y) {
        off the glass, map_touch pinned it to the corner (279,239), and the
        0 ms "tap" closed a fish's card. A finger is on the panel: after the
        driver's mirror and swap, x < PANEL_H and y < PANEL_W */
-    if (*x >= PANEL_H || *y >= PANEL_W) {
-        static int dropped; static int64_t said_us;
-        int64_t t = esp_timer_get_time(); dropped++;
-        if (t - said_us > 60LL * 1000000) { ESP_LOGI(TAG, "off-panel reports dropped: %d in the last minute (last %u,%u)", dropped, *x, *y); dropped = 0; said_us = t; }
-        return false;
-    }
+    if (off_panel_drop(*x, *y)) return false;
 #endif
     s_seen_us = esp_timer_get_time();
     return true;
@@ -802,7 +819,7 @@ void touch_port_poll(tank_t *t) {
                 if (d2 < bd) { bd = d2; best = i; }
             }
             if (best >= 0) { s_sel = (best == s_sel) ? -1 : best; s_sel_us = now;
-                ESP_LOGI(TAG, "fish %d tapped at %.0f,%.0f: card %s", best, s_px, s_py, s_sel >= 0 ? "up" : "down"); }
+                CARD_LOGI("fish %d tapped at %.0f,%.0f: card %s", best, s_px, s_py, s_sel >= 0 ? "up" : "down"); }
             else if (tank_snail_hit(t, s_px, s_py)) {   /* the snail: its card (2026-09-16), the fish first */
                 s_sel = s_sel == RENDER_CARD_SNAIL ? -1 : RENDER_CARD_SNAIL; s_sel_us = now;
                 ESP_LOGI(TAG, "snail tapped: card %s (%d spots grazed)", s_sel >= 0 ? "up" : "down", (int)t->snail_grazed); }
@@ -815,7 +832,7 @@ void touch_port_poll(tank_t *t) {
                 else if (taps >= 3) s_sel = -1;
                 ESP_LOGI(TAG, "shrimp tapped (%d): card %s | %d shrimp, %d eaten, %d/%d to the next", taps, s_sel == RENDER_CARD_SHRIMP ? "up" : "down",
                          t->shrimp_n, (int)t->shrimp_eaten, t->shrimp_food, SHRIMP_PER_JOIN); }
-            else if (s_sel >= 0) { s_sel = -1; ESP_LOGI(TAG, "tap at %.0f,%.0f (held %d ms): card down", s_px, s_py, (int)(held_us / 1000)); }   /* card up: a tap on empty glass just
+            else if (s_sel >= 0) { s_sel = -1; CARD_LOGI("tap at %.0f,%.0f (held %d ms): card down", s_px, s_py, (int)(held_us / 1000)); }   /* card up: a tap on empty glass just
                                                   dismisses it - it is NOT a tank tap
                                                   (no feed, no light-toggle burst) */
             else tank_touch_tap(t, s_px, s_py);
@@ -829,7 +846,7 @@ released:
     if (!touched) s_held_page = false;
     s_down = touched;
     if (s_sel >= t->n_fish && s_sel != RENDER_CARD_SNAIL && s_sel != RENDER_CARD_SHRIMP && s_sel != RENDER_CARD_URCHIN) s_sel = -1;   /* fresh tank / save load */
-    if (s_sel >= 0 && now - s_sel_us > CARD_UP_US) { s_sel = -1; ESP_LOGI(TAG, "card down: timed out"); } /* auto-dismiss */
+    if (s_sel >= 0 && now - s_sel_us > CARD_UP_US) { s_sel = -1; CARD_LOGI("card down: timed out"); } /* auto-dismiss */
     if (s_bat && now - s_bat_us > BATTERY_PAGE_US) s_bat = false; /* the battery page too, after a while */
 }
 
@@ -890,7 +907,13 @@ bool touch_port_finger_now(void) {
     if (esp_lcd_touch_read_data(s_tp) != ESP_OK) return false;   /* no answer: no finger */
     esp_lcd_touch_point_data_t point[1];
     uint8_t n = 0;
-    return esp_lcd_touch_get_data(s_tp, point, &n, 1) == ESP_OK && n > 0;
+    if (esp_lcd_touch_get_data(s_tp, point, &n, 1) != ESP_OK || n == 0) return false;
+#if CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-18) the ghost report panel_read drops would end
+       the dark too, and nothing darkens the screen again: the same check */
+    if (off_panel_drop(point[0].x, point[0].y)) return false;
+#endif
+    return true;
 }
 void touch_port_swallow(void) { s_swallow = true; }
 #if CONFIG_POCKET_TANK_WST169
