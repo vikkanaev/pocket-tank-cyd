@@ -131,6 +131,21 @@ static tank_t tank;
  * battery_port_key_init (it sets the pad up as an input). */
 #include "pwr_logic.h"
 static bool pwr_key_held(void) { return gpio_get_level(PIN_PWR_KEY) == PWR_KEY_ACTIVE_LEVEL; }
+/* (this fork, 2026-10-18) SYS_EN is low (a power-off, or the boot's flat
+ * cell): the key that asked for it still holds the rails up (Key2 -> D3 ->
+ * Q5) while it is down, so on battery the board drops at its release. Waits
+ * for the verdict (pwr_logic.h, pwr_off_*): PWR_OFF_STAYED_UP once the key
+ * is released and the board is still up 1 s later (the cable), or
+ * PWR_OFF_STUCK after 60 s held - the caller then stops waiting but leaves
+ * SYS_EN low, so a hold that ends on battery still ends off. */
+static int pwr_off_wait(void) {
+    pwr_off_t o; pwr_off_begin(&o);
+    for (;;) {
+        int v = pwr_off_sample(&o, pwr_key_held(), esp_timer_get_time());
+        if (v != PWR_OFF_WAIT) return v;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
 /* the low-battery cutoff (the spec: below 3.30 V for 30 s off the cable),
  * asked once a second by the tank loop and by the dark alike - a night in
  * the dark on the battery is where the cell runs down */
@@ -817,23 +832,36 @@ static void enter_poweroff(void) {
         battery_port_poweroff();                    /* SYS_EN: hold off, LOW */
         /* the PWR key powers the board while it is down (that is how a press
            boots it), so the long press that got here still holds the rails
-           up: on battery the board drops at its release. Wait it out (10 s
-           at most: a stuck key) before deciding it stayed up. */
-        int64_t t = esp_timer_get_time();
-        while (pwr_key_held() && esp_timer_get_time() - t < 10000000) vTaskDelay(pdMS_TO_TICKS(10));
-        vTaskDelay(pdMS_TO_TICKS(1000));            /* on battery the rails are gone well before this */
-        ESP_LOGW(TAG, "SYS_EN low but still powered (USB) - going dark instead");
-        /* latched again: the board now behaves as any dark one does. Left
-           low, pulling the cable later would cut a tank that may have been
-           woken and played with since this save, with no save and no line
-           in the log; a keeper who wants it off unplugs it and long-presses
-           again, on the battery. */
-        board_power_latch();
+           up: on battery the board drops at its release. "Still up, so USB"
+           is decided only after the release + 1 s (a 15 s hold in a pocket
+           must still end off, 2026-10-18 final review I2); a key held 60 s
+           is taken as stuck and the wait ends with SYS_EN still low. */
+        int v = pwr_off_wait();
+        if (v == PWR_OFF_STAYED_UP) {
+            ESP_LOGW(TAG, "SYS_EN low but still powered (USB) - going dark instead");
+            /* latched again: the board now behaves as any dark one does. Left
+               low, pulling the cable later would cut a tank that may have been
+               woken and played with since this save, with no save and no line
+               in the log; a keeper who wants it off unplugs it and long-presses
+               again, on the battery. */
+            board_power_latch();
+            s_sleep_why = "a power-off that stayed up on USB";
+        } else {
+            /* not latched again: the dark waits for the release (dark_run),
+               and on battery the board drops there - off, as the keeper
+               meant. On the cable the dark goes on with SYS_EN low; the
+               save above stands, and a wake latches it again below. */
+            ESP_LOGW(TAG, "power-off: the PWR key held %d s with SYS_EN low (stuck?) - dark with SYS_EN still low, the board drops at the release on battery",
+                     (int)(PWR_OFF_STUCK_US / 1000000));
+            s_sleep_why = "a power-off with the PWR key stuck down";
+        }
         s_cutoff = (pwr_cutoff_t){ 0 };
         imu_port_wake();                            /* the dark wakes on motion: the IMU slept above */
-        s_sleep_why = "a power-off that stayed up on USB";
 #if CONFIG_POCKET_TANK_SLEEP_SCREEN || CONFIG_POCKET_TANK_SLEEP_LIGHT || SLEEP_SETTING_ROW
-        if (!dark_run(0, false)) return;            /* woken: the tank runs on */
+        if (!dark_run(0, false)) {                  /* woken: the tank runs on */
+            if (v != PWR_OFF_STAYED_UP) board_power_latch();   /* a woken tank is latched, as any */
+            return;
+        }
 #else
         deep_sleep_now(0);                          /* a WST169 built for deepsleep has no dark (no row): BOOT wakes */
 #endif
@@ -1383,6 +1411,32 @@ void app_main(void) {
        PMIC - then, if this boot was asked for, UPDATE MODE before anything
        else exists (docs/OTA.md): the pages over the radio with the whole
        internal heap to itself. Back from it, the normal boot goes on. */
+#if CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-17) a cell too flat to boot on (the spec: under
+       3.20 V off the cable): off at once, before display_port_init lights
+       the backlight or the save is touched - the tank is as the last
+       power-off left it. The ADC port needs no I2C (no PMIC: it ignores the
+       bus), so it starts here; the call below finds it started. */
+    battery_port_init(NULL);
+    { int mv = battery_port_vbat_mv();
+      if (pwr_boot_too_low(BAT_ON_POWER(battery_port_state()), mv)) {
+          ESP_LOGW(TAG, "boot: battery %d mV, under %d mV off the cable - powering off at once", mv, PWR_BOOT_LOW_MV);
+          batlog_add(battery_pct(), mv, 0, true, "off");  /* "off" is mirrored to NVS (batlog.c): the next boot reads the flat cell back */
+          battery_port_key_init();                     /* GPIO 40 as an input: the power-on press is read below */
+          battery_port_poweroff();
+          /* the power-on press holds the rails up while it is down: the
+             board drops at its release. Still up 1 s after it: a charger
+             the cable guess cannot see yet (no USB host, no 3 minutes of
+             rising VBAT) - latched again and booted, the charger is
+             filling the cell. A key held 60 s (stuck): booted with SYS_EN
+             still low, so on battery the release still ends it off */
+          if (pwr_off_wait() == PWR_OFF_STAYED_UP) {
+              ESP_LOGW(TAG, "boot: SYS_EN low but still powered (a charger) - booting after all");
+              board_power_latch();
+          } else ESP_LOGW(TAG, "boot: the PWR key held %d s with SYS_EN low (stuck?) - booting unlatched: on battery the board drops at the release",
+                          (int)(PWR_OFF_STUCK_US / 1000000));
+      } }
+#endif
     render_clock_us = esp_timer_get_time;    /* per-stage frame profiling in the display log */
     display_port_init();
     if (pwr_sensed()) {                      /* the PWR key's sense line: a plain input (a deep-sleep wake left it an RTC pad) */
@@ -1392,27 +1446,6 @@ void app_main(void) {
     }
     touch_port_init();
     s_pmic = battery_port_init(board_i2c_bus());
-#if CONFIG_POCKET_TANK_WST169
-    /* (this fork, 2026-10-17) a cell too flat to boot on (the spec: under
-       3.20 V off the cable): off at once, before the screen lights or the
-       save is touched - the tank is as the last power-off left it */
-    { int mv = battery_port_vbat_mv();
-      if (pwr_boot_too_low(BAT_ON_POWER(battery_port_state()), mv)) {
-          ESP_LOGW(TAG, "boot: battery %d mV, under %d mV off the cable - powering off at once", mv, PWR_BOOT_LOW_MV);
-          batlog_add(battery_pct(), mv, 0, true, "off");  /* "off" is mirrored to NVS (batlog.c): the next boot reads the flat cell back */
-          battery_port_key_init();                     /* GPIO 40 as an input: the power-on press is read below */
-          battery_port_poweroff();
-          /* the power-on press holds the rails up while it is down: the board drops at its release */
-          int64_t t = esp_timer_get_time();
-          while (pwr_key_held() && esp_timer_get_time() - t < 10000000) vTaskDelay(pdMS_TO_TICKS(10));
-          vTaskDelay(pdMS_TO_TICKS(1000));
-          /* still here: a charger the cable guess cannot see yet (no USB host,
-             no 3 minutes of rising VBAT). Latched again and booted: the
-             charger is filling the cell */
-          ESP_LOGW(TAG, "boot: SYS_EN low but still powered (a charger) - booting after all");
-          board_power_latch();
-      } }
-#endif
     if (!board_has_expander()) {      /* not positively the 1.8: on the round board A3V3 feeds the ES7210 whole,
                                          and off, it clamps the I2C bus (battery_port.h) - never cut it on a guess */
         battery_port_pin_rail("aldo1");

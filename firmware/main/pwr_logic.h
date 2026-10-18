@@ -36,4 +36,19 @@ typedef struct { int64_t low_since_us; } pwr_cutoff_t;
 bool pwr_cutoff_due(pwr_cutoff_t *c, bool on_cable, int vbat_mv, int64_t now_us); /* true after 30 s below 3300 off the cable; on the cable or no battery: never, and the timer resets */
 bool pwr_boot_too_low(bool on_cable, int vbat_mv);       /* off the cable and present and < 3200 */
 
+/* (this fork, 2026-10-18) after SYS_EN goes low: the PWR key holds the rails
+ * up while it is down (Key2 -> D3 -> Q5), so "still powered, so it is USB"
+ * is a verdict only after the key is released and the board has stayed up
+ * PWR_OFF_SETTLE_US more. A key held PWR_OFF_STUCK_US is taken as stuck: the
+ * caller stops waiting, but must not latch SYS_EN again (on battery the
+ * board then drops at the release, as the keeper meant). Sample every few ms
+ * from pwr_off_begin on; a held sample restarts the settle wait. */
+#define PWR_OFF_SETTLE_US  1000000      /* released this long and still up: on the cable */
+#define PWR_OFF_STUCK_US   60000000     /* held this long: a stuck key, stop waiting */
+enum { PWR_OFF_WAIT, PWR_OFF_STAYED_UP, PWR_OFF_STUCK };
+/* held_since_us / up_since_us: + 1 us, 0 = not in that state (as pwr_cutoff_t) */
+typedef struct { int64_t held_since_us; int64_t up_since_us; } pwr_off_t;
+void pwr_off_begin(pwr_off_t *o);
+int  pwr_off_sample(pwr_off_t *o, bool key_down, int64_t now_us); /* PWR_OFF_WAIT / _STAYED_UP / _STUCK */
+
 #endif

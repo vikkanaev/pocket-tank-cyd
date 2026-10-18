@@ -69,3 +69,16 @@ bool pwr_cutoff_due(pwr_cutoff_t *c, bool on_cable, int vbat_mv, int64_t now_us)
 bool pwr_boot_too_low(bool on_cable, int vbat_mv) {
     return !on_cable && pwr_battery_present(vbat_mv) && vbat_mv < PWR_BOOT_LOW_MV;
 }
+
+void pwr_off_begin(pwr_off_t *o) { o->held_since_us = 0; o->up_since_us = 0; }
+
+int pwr_off_sample(pwr_off_t *o, bool key_down, int64_t now_us) {
+    if (key_down) {
+        o->up_since_us = 0;                                  /* a bounce or a new press: the settle starts over */
+        if (!o->held_since_us) o->held_since_us = now_us + 1;
+        return now_us - (o->held_since_us - 1) >= PWR_OFF_STUCK_US ? PWR_OFF_STUCK : PWR_OFF_WAIT;
+    }
+    o->held_since_us = 0;
+    if (!o->up_since_us) { o->up_since_us = now_us + 1; return PWR_OFF_WAIT; }
+    return now_us - (o->up_since_us - 1) >= PWR_OFF_SETTLE_US ? PWR_OFF_STAYED_UP : PWR_OFF_WAIT;
+}

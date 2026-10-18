@@ -4,7 +4,9 @@
  * Checks: a short press is 1 at release, a long hold is 2 at 1.5 s and
  * nothing at release; the power-on press and a swallowed press count for
  * nothing; the percent curve's ends, clamps and order; the battery-present
- * window; the 30 s cutoff and what resets it; the boot cutoff. */
+ * window; the 30 s cutoff and what resets it; the boot cutoff; the
+ * power-off's "still up = USB" verdict only after the release + 1 s, and
+ * the stuck-key bound. */
 #include <stdio.h>
 #include "pwr_logic.h"
 
@@ -120,6 +122,37 @@ int main(void) {
     CHECK(!pwr_boot_too_low(true, 3150), "3150 on the cable at boot is too low");
     CHECK(!pwr_boot_too_low(false, 0), "no battery at boot is too low");
     CHECK(!pwr_boot_too_low(false, 3250), "3250 off the cable at boot is too low");
+
+    /* after SYS_EN low: "still up = USB" only after the release + 1 s */
+    { pwr_off_t o; int v = PWR_OFF_WAIT; int64_t s0, tt;
+      /* a 15 s hold (a pocket): never a verdict while held, then 1 s after the release */
+      pwr_off_begin(&o); tt = 0;
+      for (; tt < 15000 * MS; tt += 10 * MS) { v = pwr_off_sample(&o, true, tt); if (v != PWR_OFF_WAIT) break; }
+      CHECK(v == PWR_OFF_WAIT, "a 15 s hold gave verdict %d while held", v);
+      s0 = tt;
+      for (; tt < s0 + 3000 * MS; tt += 10 * MS) { v = pwr_off_sample(&o, false, tt); if (v != PWR_OFF_WAIT) break; }
+      CHECK(v == PWR_OFF_STAYED_UP, "released after 15 s: no stayed-up verdict (%d)", v);
+      CHECK(tt - s0 >= 1000 * MS && tt - s0 < 1020 * MS, "stayed up came %lld ms after the release, not 1 s", (long long)((tt - s0) / MS));
+      /* already released at the start (the hold ended at 1.5 s): 1 s */
+      pwr_off_begin(&o); v = PWR_OFF_WAIT;
+      for (tt = 0; tt < 3000 * MS; tt += 10 * MS) { v = pwr_off_sample(&o, false, tt); if (v != PWR_OFF_WAIT) break; }
+      CHECK(v == PWR_OFF_STAYED_UP && tt >= 1000 * MS && tt < 1020 * MS, "a released key: stayed up %d at %lld ms", v, (long long)(tt / MS));
+      /* a bounce in the settle second starts it over */
+      pwr_off_begin(&o); v = PWR_OFF_WAIT;
+      for (tt = 0; tt < 500 * MS; tt += 10 * MS) v = pwr_off_sample(&o, false, tt);
+      v = pwr_off_sample(&o, true, tt); tt += 10 * MS; s0 = tt;
+      for (; tt < s0 + 3000 * MS; tt += 10 * MS) { v = pwr_off_sample(&o, false, tt); if (v != PWR_OFF_WAIT) break; }
+      CHECK(v == PWR_OFF_STAYED_UP && tt - s0 >= 1000 * MS, "a bounce did not restart the settle (%lld ms)", (long long)((tt - s0) / MS));
+      /* a stuck key: STUCK at 60 s held, never STAYED_UP */
+      pwr_off_begin(&o); v = PWR_OFF_WAIT;
+      for (tt = 0; tt < 70000 * MS; tt += 10 * MS) { v = pwr_off_sample(&o, true, tt); if (v != PWR_OFF_WAIT) break; }
+      CHECK(v == PWR_OFF_STUCK && tt >= 60000 * MS && tt < 60020 * MS, "a stuck key: %d at %lld ms, not STUCK at 60 s", v, (long long)(tt / MS));
+      /* the stuck clock is the hold's own: a release resets it */
+      pwr_off_begin(&o); v = PWR_OFF_WAIT;
+      for (tt = 0; tt < 50000 * MS; tt += 10 * MS) pwr_off_sample(&o, true, tt);
+      pwr_off_sample(&o, false, tt); tt += 10 * MS;
+      for (s0 = tt; tt < s0 + 20000 * MS; tt += 10 * MS) { v = pwr_off_sample(&o, true, tt); if (v != PWR_OFF_WAIT) break; }
+      CHECK(v == PWR_OFF_WAIT, "a release did not reset the stuck clock (%d)", v); }
 
     if (fails) { printf("pwr_host: %d FAILED\n", fails); return 1; }
     printf("pwr_host: all passed\n");
