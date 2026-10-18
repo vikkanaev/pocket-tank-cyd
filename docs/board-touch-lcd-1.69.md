@@ -1,4 +1,4 @@
-# Waveshare ESP32-S3-Touch-LCD-1.69: bench log (phase 1)
+# Waveshare ESP32-S3-Touch-LCD-1.69: bench log (phases 1 and 2)
 
 Branch `wst169`, 2026-10-17. Build and flash: `tools/build_wst169.sh`
 (`CONFIG_POCKET_TANK_WST169`; CYD.md, "Touch-LCD-1.69").
