@@ -274,6 +274,14 @@ static bool panel_read(uint16_t *x, uint16_t *y) {
 #endif
     esp_lcd_touch_read_data(s_tp);
     if (!esp_lcd_touch_get_coordinates(s_tp, x, y, st, &n, 1) || n == 0) return false;
+#if CONFIG_POCKET_TANK_WST169
+    /* (this fork, 2026-10-18) every ~10 s the CST816T's report came back
+       garbage (all ones, by the look): the driver took it for a finger far
+       off the glass, map_touch pinned it to the corner (279,239), and the
+       0 ms "tap" closed a fish's card. A finger is on the panel: after the
+       driver's mirror and swap, x < PANEL_H and y < PANEL_W */
+    if (*x >= PANEL_H || *y >= PANEL_W) { ESP_LOGI(TAG, "off-panel report %u,%u dropped", *x, *y); return false; }
+#endif
     s_seen_us = esp_timer_get_time();
     return true;
 }
